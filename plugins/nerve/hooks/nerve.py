@@ -82,13 +82,10 @@ INGEST_HOST = "127.0.0.1"
 INGEST_PORT = 17890
 INGEST_BASE = f"http://{INGEST_HOST}:{INGEST_PORT}"
 
-#: How long one ingest POST may hold the agent up. Fail-open: past this the
-#: hook gives up on the hub, never on the agent.
-INGEST_TIMEOUT = 1.5
-
-#: Most of an answer the hook ever reads. It wants a status line, and — when
-#: that status is a refusal — enough of the body to say why.
-_ANSWER_CAP = 2048
+#: How long connect + write may take. The hook never reads the response, so
+#: this does not include the hub's answer. Fail-open: past this the hook gives
+#: up on the hub, never on the agent.
+INGEST_TIMEOUT = 0.25
 
 PRODUCER_META: dict[str, dict[str, str]] = {
     "claude": {"id": "claude-code", "name": "Claude Code", "kind": "agent.claude"},
@@ -1179,26 +1176,24 @@ def _build_job(
     return job
 
 
-def _post_json(path: str, payload: dict[str, Any]) -> tuple[int, str]:
-    """POST `payload` to the fixed ingest endpoint; return `(status, detail)`.
+def _post_json(path: str, payload: dict[str, Any]) -> bool:
+    """Write `payload` to the fixed ingest endpoint. Never read the response.
 
-    Framing is ``http.client``'s job, not this file's. A hand-written request
-    line plus headers works right up until it does not — a miscounted
-    ``Content-Length`` on a multibyte payload, or a response that arrives in
-    two reads — and an ingest that fails silently is the worst kind, because
-    the agent never sees it.
+    Framing is ``http.client``'s job, not this file's. The call returns once
+    the request bytes have been handed to the socket, or the connect fails.
+    The hub's status line is not the agent's business: a closed port, a 4xx
+    and a hub that accepts and then sits there all return without raising, and
+    nothing is written to stdout or stderr (a harness would show that to the
+    model).
 
     The import is local and deliberate: it costs about 9 ms, and the hook runs
     as one process per agent event, so only events that actually post should
-    pay for it. Measured against a 5 s hook timeout that is noise; measured
-    against the early-exit paths above, it is worth keeping off them.
+    pay for it.
 
     The endpoint is read from the module globals at call time rather than
     captured in a default argument, which is the seam the transport tests
     already use to point this at a stand-in on an ephemeral port. Production
     never moves it: the ingest address is fixed (CLAUDE.md invariant 2).
-
-    Raises whatever the connection raises; the caller is what fails open.
     """
     import http.client
 
@@ -1218,11 +1213,14 @@ def _post_json(path: str, payload: dict[str, Any]) -> tuple[int, str]:
                 "Connection": "close",
             },
         )
-        response = connection.getresponse()
-        detail = response.read(_ANSWER_CAP).decode("utf-8", errors="replace")[:200]
-        return response.status, detail
+        return True
+    except Exception:
+        return False
     finally:
-        connection.close()
+        try:
+            connection.close()
+        except Exception:
+            pass
 
 
 def _post_snapshot(alias: str, machine_kind: str, job: dict[str, Any]) -> bool:
@@ -1235,7 +1233,7 @@ def _post_jobs(alias: str, machine_kind: str, jobs: list[dict[str, Any]]) -> boo
 
     A SessionStart that supersedes a ghost closes the old conversation and opens
     the new one in one round trip — two conversations, not two jobs per
-    conversation (invariant 1). Fail-open: a bad response is logged and dropped.
+    conversation (invariant 1). Fail-open: a hub that is down is a silent miss.
     """
     if not jobs:
         return True
@@ -1244,19 +1242,7 @@ def _post_jobs(alias: str, machine_kind: str, jobs: list[dict[str, Any]]) -> boo
         "machineKind": machine_kind,
         "jobs": jobs,
     }
-    try:
-        status, detail = _post_json("/v1/snapshot", payload)
-    except Exception as e:
-        print(f"[nerve] snapshot failed alias={alias!r}: {e}", file=sys.stderr)
-        return False
-    if 200 <= status < 300:
-        return True
-    # Fail open, but leave a breadcrumb for "why is Nerve empty?".
-    print(
-        f"[nerve] snapshot HTTP {status} alias={alias!r} {detail}",
-        file=sys.stderr,
-    )
-    return False
+    return _post_json("/v1/snapshot", payload)
 
 
 # ---------------------------------------------------------------------------
@@ -1303,16 +1289,21 @@ def _state_dir() -> Path:
 _IDENTITY_TTL = 24 * 60 * 60
 
 
+# Same list as nerve.js SLOT_ENV_KEYS. Windows Terminal and ConEmu are
+# included so two concurrent Windows sessions do not collapse onto one pid.
+_SLOT_ENV_KEYS = (
+    "TERM_SESSION_ID",
+    "ITERM_SESSION_ID",
+    "WEZTERM_PANE",
+    "KITTY_WINDOW_ID",
+    "TMUX_PANE",
+    "WT_SESSION",
+    "ConEmuPID",
+)
+
+
 def _terminal_token() -> str:
-    for key in (
-        "TERM_SESSION_ID",
-        "ITERM_SESSION_ID",
-        "WEZTERM_PANE",
-        "KITTY_WINDOW_ID",
-        "TMUX_PANE",
-        "WT_SESSION",
-        "ConEmuPID",
-    ):
+    for key in _SLOT_ENV_KEYS:
         val = os.environ.get(key)
         if val:
             return f"{key}:{val}"
@@ -1424,19 +1415,13 @@ def _climb_agent_pid() -> int | None:
 def _host_slot_token() -> str:
     """Identify the UI/terminal/process that owns this conversation.
 
-    Prefer terminal session env (stable across /new in the same tab). Fall back
-    to the agent host PID so two concurrent windows do not thrash each other.
+    Same env keys as ``_terminal_token`` / nerve.js ``SLOT_ENV_KEYS``. Prefer
+    that token (stable across /new in the same tab). Fall back to the agent
+    host PID so two concurrent windows do not thrash each other.
     """
-    for key in (
-        "TERM_SESSION_ID",
-        "ITERM_SESSION_ID",
-        "WEZTERM_PANE",
-        "KITTY_WINDOW_ID",
-        "TMUX_PANE",
-    ):
-        val = os.environ.get(key)
-        if val:
-            return f"{key}:{val}"
+    token = _terminal_token()
+    if token != "default":
+        return token
     agent_pid = _agent_process_pid()
     if agent_pid:
         return f"pid:{agent_pid}"

@@ -10,6 +10,7 @@ import socket
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -803,11 +804,12 @@ class IngestTransportTests(unittest.TestCase):
                     break
                 body += piece
             self.requests.append(head + b"\r\n\r\n" + body)
-            conn.sendall(self.answer)
+            if self.answer is not None:
+                conn.sendall(self.answer)
 
-    def test_post_sends_a_well_formed_request_and_reads_the_status(self):
-        status, _ = self.mod._post_json("/v1/snapshot", {"alias": "box", "jobs": []})
-        self.assertEqual(status, 200)
+    def test_post_sends_a_well_formed_request_without_reading_the_response(self):
+        sent = self.mod._post_json("/v1/snapshot", {"alias": "box", "jobs": []})
+        self.assertTrue(sent)
 
         self.thread.join(timeout=2)
         raw = self.requests[0]
@@ -825,22 +827,26 @@ class IngestTransportTests(unittest.TestCase):
         self.assertEqual(int(headers[b"content-length"]), len(body))
         self.assertEqual(json.loads(body), {"alias": "box", "jobs": []})
 
-    def test_a_refusal_is_reported_with_its_body_and_never_raises(self):
-        self.answer = (
-            b"HTTP/1.1 400 Bad Request\r\nContent-Length: 26\r\n\r\n"
-            b'{"error":"alias required"}'
-        )
-        status, detail = self.mod._post_json("/v1/snapshot", {"jobs": []})
-        self.assertEqual(status, 400)
-        self.assertIn("alias required", detail)
+    def test_a_hub_that_never_answers_does_not_hold_the_hook(self):
+        # The agent must not wait on the status line. The server reads the
+        # body and then sits there.
+        self.answer = None
+        started = time.monotonic()
+        sent = self.mod._post_json("/v1/snapshot", {"alias": "box", "jobs": []})
+        elapsed = time.monotonic() - started
+        self.assertTrue(sent)
+        self.assertLess(elapsed, 0.5)
 
     def test_no_hub_listening_fails_open(self):
         self.server.close()
         self.thread.join(timeout=2)
-        # A closed port must reach the caller as an exception it can swallow,
-        # never as a hook that blocks or dies.
+        # A closed port is a miss the hook reports as False, immediately.
+        # It must not block or raise — the agent exits 0 either way.
+        started = time.monotonic()
         posted = self.mod._post_jobs("box", "darwin", [{"id": "claude-code:s1"}])
+        elapsed = time.monotonic() - started
         self.assertFalse(posted)
+        self.assertLess(elapsed, 0.5)
 
 
 class ProcessProbeTests(unittest.TestCase):

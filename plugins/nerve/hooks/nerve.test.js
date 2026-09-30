@@ -134,9 +134,20 @@ test("a windows cwd still reports a focus hint with the path in it", () => {
 // ── Transport ───────────────────────────────────────────────────────────────
 
 const http = require("node:http");
-const { postSnapshot } = require("./nerve.js");
+const { postSnapshot, postIngest } = require("./nerve.js");
 
 /** A throwaway ingest server on an ephemeral port. Never 17890. */
+function waitUntil(pred, ms = 500) {
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const tick = () => {
+      if (pred() || Date.now() - started > ms) resolve();
+      else setTimeout(tick, 10);
+    };
+    tick();
+  });
+}
+
 function ingest(handler) {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
@@ -160,10 +171,10 @@ test("a snapshot arrives as a well-formed POST", async () => {
 
   try {
     await postSnapshot("thinkpad", "windows", { id: "j", name: "nerve" }, port);
+    // The post resolves when the bytes are flushed, which is before this
+    // process has parsed them as an incoming request.
+    await waitUntil(() => seen);
   } finally {
-    // The handler runs before the response is fully flushed to us; give the
-    // event loop the turn it needs before tearing the server down.
-    await new Promise((r) => setImmediate(r));
     server.close();
   }
 
@@ -184,8 +195,8 @@ test("a multibyte job name keeps its Content-Length honest", async () => {
   const { port } = server.address();
   try {
     await postSnapshot("mac", "darwin", { id: "j", name: "项目" }, port);
+    await waitUntil(() => seen);
   } finally {
-    await new Promise((r) => setImmediate(r));
     server.close();
   }
   const expected = Buffer.byteLength(seen.body);
@@ -200,7 +211,50 @@ test("nothing listening resolves rather than throwing", async () => {
   server.close();
   await new Promise((r) => server.on("close", r));
 
+  const started = Date.now();
   await postSnapshot("mac", "darwin", { id: "j", name: "nerve" }, port);
+  assert.ok(Date.now() - started < 500);
+});
+
+test("a hub that never answers does not hold the post", async () => {
+  let seen;
+  const server = await new Promise((resolve) => {
+    const hanging = http.createServer((req) => {
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", () => { seen = body; });
+      // Deliberately no response.
+    });
+    hanging.listen(0, "127.0.0.1", () => resolve(hanging));
+  });
+  const { port } = server.address();
+  const started = Date.now();
+  try {
+    await postIngest(port, "/v1/hook?producer=grok", Buffer.from('{"ok":true}'));
+    assert.ok(Date.now() - started < 500);
+    await waitUntil(() => seen !== undefined);
+  } finally {
+    server.close();
+  }
+  assert.equal(seen, '{"ok":true}');
+});
+
+test("Claude hooks run in the background and do not show a Nerve spinner", () => {
+  // async: the agent continues without waiting for the process. No
+  // statusMessage: the turn must not advertise that Nerve is in the path.
+  const claude = require("./hooks.json");
+  for (const event of Object.keys(claude.hooks)) {
+    for (const group of claude.hooks[event]) {
+      for (const hook of group.hooks) {
+        // SessionEnd stays synchronous: hosts tear async work down when the
+        // session exits, and the end snapshot has to be written first. The
+        // script still returns without reading the hub's response.
+        if (event === "SessionEnd") assert.equal(hook.async, undefined, event);
+        else assert.equal(hook.async, true, event);
+        assert.equal(hook.statusMessage, undefined, event);
+      }
+    }
+  }
 });
 
 test("Grok hooks are command posts, not type:http to loopback", () => {
@@ -229,6 +283,48 @@ test("grok-post.js exits 0 with empty stdin", async () => {
   child.stdin.end();
   const code = await new Promise((resolve) => child.on("close", resolve));
   assert.equal(code, 0);
+});
+
+test("grok-post.js exits before a silent hub answers", async () => {
+  const { spawn } = require("child_process");
+  const os = require("os");
+  const fs = require("fs");
+  // A warm identity cache so the assertion measures the POST, not the ps climb.
+  const token = "TERM_SESSION_ID:grok-fire-forget-test";
+  const idFile = require("path").join(os.tmpdir(), "nerve-hook", `identity-${token.replace(/[^\w.-]/g, "_")}.json`);
+  fs.mkdirSync(require("path").dirname(idFile), { recursive: true });
+  fs.writeFileSync(idFile, JSON.stringify({ alias: "test", pid: 123, ts: new Date().toISOString() }));
+  let seen = "";
+  const server = await new Promise((resolve) => {
+    const hanging = http.createServer((req) => {
+      req.on("data", (chunk) => { seen += chunk; });
+    });
+    hanging.listen(0, "127.0.0.1", () => resolve(hanging));
+  });
+  const { port } = server.address();
+  const child = spawn(process.execPath, [
+    require("path").join(__dirname, "grok-post.js"),
+    "--port",
+    String(port),
+  ], {
+    stdio: ["pipe", "ignore", "ignore"],
+    env: { ...process.env, TERM_SESSION_ID: "grok-fire-forget-test" },
+  });
+  child.stdin.end(JSON.stringify({
+    hook_event_name: "PreToolUse",
+    session_id: "s",
+    cwd: "/tmp",
+  }));
+  const started = Date.now();
+  const code = await new Promise((resolve) => child.on("close", resolve));
+  try {
+    assert.equal(code, 0);
+    assert.ok(Date.now() - started < 500);
+    await waitUntil(() => seen.includes("PreToolUse"));
+    assert.ok(seen.includes("PreToolUse"));
+  } finally {
+    server.close();
+  }
 });
 
 for (const notification_type of ["agent_needs_input", "elicitation_dialog", "permission_prompt"]) {

@@ -15,7 +15,9 @@ const { spawnSync } = require("child_process");
 
 const INGEST_HOST = "127.0.0.1";
 const INGEST_PORT = 17890;
-const INGEST_TIMEOUT_MS = 1500;
+// Connect + write only. The hook never reads a response, so this bounds a
+// black-holed port, not how long the hub takes to answer.
+const INGEST_TIMEOUT_MS = 250;
 const PROMPT_MAX = 400;
 const SUBAGENT_NOISE = new Set([
   "pretooluse",
@@ -720,21 +722,17 @@ function slotClear(id, session) {
 }
 
 // Node's own HTTP client, not a hand-written request over a raw socket.
-// Framing, `Content-Length`, the response and connection teardown are the
-// runtime's job; getting any of them subtly wrong here would corrupt an ingest
-// the agent never sees fail.
+// Framing and `Content-Length` are the runtime's job.
 //
-// Fail-open in every arm (CLAUDE.md invariant 2): unreachable, refused and slow
-// all resolve rather than reject, so no hook event can ever block an agent.
-// `port` is for tests only: production never passes it, because the ingest
-// address is fixed (CLAUDE.md invariant 2) and a test must never bind 17890 —
-// that port belongs to the hub a developer is actually running.
-// Accepts one job or several — a SessionStart that supersedes a ghost closes
-// the old conversation and opens the new one in one round trip. The envelope
-// was always `{ jobs: [...] }`; `JobStore::apply_snapshot` already takes a Vec.
-function postSnapshot(alias, kind, jobs, port = INGEST_PORT) {
-  const list = Array.isArray(jobs) ? jobs : [jobs];
-  const body = Buffer.from(JSON.stringify({ alias, machineKind: kind, jobs: list }));
+// Fire-and-forget (CLAUDE.md invariant 2): the promise resolves once the
+// request bytes are flushed, or the connect fails, whichever comes first.
+// The hub's status line is never read. A closed port, a refusal and a hub
+// that accepts and then sits there all look the same to the agent: this
+// returns, and the process exits 0. `port` is for tests only — production
+// never passes it, because the ingest address is fixed and a test must never
+// bind 17890.
+function postIngest(port, urlPath, body) {
+  const payload = Buffer.isBuffer(body) ? body : Buffer.from(body);
   return new Promise((resolve) => {
     let done = false;
     const finish = () => {
@@ -744,40 +742,47 @@ function postSnapshot(alias, kind, jobs, port = INGEST_PORT) {
     };
     let request;
     try {
-      request = http.request(
-        {
-          host: INGEST_HOST,
-          port,
-          method: "POST",
-          path: "/v1/snapshot",
-          headers: {
-            "User-Agent": "nerve-hook-node/0.1",
-            "Content-Type": "application/json",
-            "Content-Length": body.length,
-            Connection: "close",
-          },
+      request = http.request({
+        host: INGEST_HOST,
+        port,
+        method: "POST",
+        path: urlPath,
+        timeout: INGEST_TIMEOUT_MS,
+        headers: {
+          "User-Agent": "nerve-hook-node/0.1",
+          "Content-Type": "application/json",
+          "Content-Length": payload.length,
+          Connection: "close",
         },
-        (response) => {
-          // Drain so the socket can close; the body is of no interest. No
-          // synchronous log write on this path — it used to block exit on a
-          // file nothing reads (surfaces never touch `nerve-hook.log`).
-          response.resume();
-          response.on("end", finish);
-          response.on("error", finish);
-        },
-      );
+      });
     } catch (_) {
       finish();
       return;
     }
-    request.setTimeout(INGEST_TIMEOUT_MS, () => {
+    request.on("timeout", () => {
       request.destroy();
       finish();
     });
     request.on("error", finish);
-    request.on("close", finish);
-    request.end(body);
+    // If a response shows up anyway, drop it. Waiting for it is the bug.
+    request.on("response", (response) => {
+      response.resume();
+      if (response.socket) response.socket.unref();
+    });
+    request.end(payload, () => {
+      if (request.socket) request.socket.unref();
+      finish();
+    });
   });
+}
+
+// Accepts one job or several — a SessionStart that supersedes a ghost closes
+// the old conversation and opens the new one in one round trip. The envelope
+// was always `{ jobs: [...] }`; `JobStore::apply_snapshot` already takes a Vec.
+function postSnapshot(alias, kind, jobs, port = INGEST_PORT) {
+  const list = Array.isArray(jobs) ? jobs : [jobs];
+  const body = Buffer.from(JSON.stringify({ alias, machineKind: kind, jobs: list }));
+  return postIngest(port, "/v1/snapshot", body);
 }
 
 async function processEvent(payload) {
@@ -862,6 +867,6 @@ if (require.main === module) {
 
 module.exports = {
   processEvent, mapEvent, eventName, sessionId,
-  fileUri, pathStyle, buildLocation, postSnapshot, mapFixture,
+  fileUri, pathStyle, buildLocation, postIngest, postSnapshot, mapFixture,
   agentPid, slotId, machineAlias, machineKind, localActions,
 };
