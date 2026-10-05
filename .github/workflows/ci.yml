@@ -50,6 +50,15 @@ jobs:
         working-directory: vsc-ext
         run: npm ci && npm test
 
+      - name: Tether web surface
+        run: node --test surfaces/tether-web/tests/*.test.mjs
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nerve-tether-web
+          path: surfaces/tether-web/package/
+          if-no-files-found: error
+
       - name: site
         working-directory: index
         run: npm ci && npm test && npm run build
