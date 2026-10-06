@@ -1,11 +1,8 @@
 //! Light or dark, as the taskbar has it.
 //!
 //! Two separate settings exist: `SystemUsesLightTheme` is the taskbar and the
-//! notification area, `AppsUseLightTheme` is application chrome. The tray icon
-//! sits on the former and the flyout is the latter, but a user who has them
-//! disagreeing is rare enough that following the taskbar for both is the
-//! honest simplification — the icon is the part that would be illegible if it
-//! guessed wrong.
+//! notification area, `AppsUseLightTheme` is application chrome. Respect each
+//! independently so a dark taskbar can coexist with a light panel.
 
 use crate::tray::icon::Theme;
 
@@ -19,9 +16,19 @@ const PERSONALIZE: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Per
 /// need a thread and an `unsafe` call to save nothing.
 #[cfg(windows)]
 pub fn current() -> Theme {
+    read("SystemUsesLightTheme")
+}
+
+#[cfg(windows)]
+pub fn apps() -> Theme {
+    read("AppsUseLightTheme")
+}
+
+#[cfg(windows)]
+fn read(value_name: &str) -> Theme {
     let light = windows_registry::CURRENT_USER
         .open(PERSONALIZE)
-        .and_then(|key| key.get_u32("SystemUsesLightTheme"))
+        .and_then(|key| key.get_u32(value_name))
         .map(|value| value != 0)
         // Windows ships dark, and an icon lifted for dark is still readable on
         // light — the other way round is not.
@@ -38,4 +45,9 @@ pub fn current() -> Theme {
 #[cfg(not(windows))]
 pub fn current() -> Theme {
     Theme::Dark
+}
+
+#[cfg(not(windows))]
+pub fn apps() -> Theme {
+    current()
 }

@@ -19,8 +19,9 @@ use nerve_surface_core::locate::{FileProbe, HubLocator};
 use nerve_surface_core::store::JobsStore;
 use nerve_surface_core::stream::stream_path;
 use nerve_windows_surface::app::App;
-use nerve_windows_surface::platform::instance::{claim, Claim, LOCK_PORT};
+use nerve_windows_surface::platform::instance::{activate, claim, Claim, LOCK_PORT};
 use nerve_windows_surface::platform::{aumid, paths};
+use nerve_windows_surface::runtime::{Desktop, Runtime};
 
 /// The label this surface attaches under. The hub treats it as a log tag.
 const SURFACE: &str = "windows";
@@ -39,13 +40,18 @@ fn main() {
         std::thread::sleep(LOGIN_SETTLE);
     }
 
-    let _lock = match claim(LOCK_PORT) {
+    let listener = match claim(LOCK_PORT) {
         Ok(Claim::Yield) => {
+            if !autostarted {
+                if let Err(error) = activate(LOCK_PORT) {
+                    tracing::warn!(%error, "could not activate existing surface");
+                }
+            }
             tracing::info!("another tray surface already has this machine");
             eprintln!("nerve: another tray surface already has this machine");
             return;
         }
-        Ok(owned) => Some(owned),
+        Ok(Claim::Owned(listener)) => Some(listener),
         // Could not bind at all — a sandbox, most likely. Running unlocked is
         // worse than running locked, and better than not running.
         Err(error) => {
@@ -75,6 +81,7 @@ fn main() {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_decorations(false)
+            .with_transparent(true)
             .with_resizable(true)
             .with_inner_size([settings.panel_width, settings.panel_height])
             .with_min_inner_size([
@@ -95,11 +102,26 @@ fn main() {
         ..Default::default()
     };
 
-    let result = eframe::run_native(
+    let desktop = std::rc::Rc::new(std::cell::RefCell::new(Desktop {
+        open_requested: !autostarted,
+        ..Default::default()
+    }));
+    let event_loop =
+        match winit::event_loop::EventLoop::<eframe::UserEvent>::with_user_event().build() {
+            Ok(event_loop) => event_loop,
+            Err(error) => {
+                tracing::error!(%error, "could not create event loop");
+                return;
+            }
+        };
+    let app_desktop = desktop.clone();
+    let app = eframe::create_native(
         "Nerve",
         options,
-        Box::new(move |cc| Ok(Box::new(App::new(cc, store, hub_installed)))),
+        Box::new(move |cc| Ok(Box::new(App::new(cc, store, hub_installed, app_desktop)))),
+        &event_loop,
     );
+    let result = event_loop.run_app(&mut Runtime::new(app, desktop, listener));
     if let Err(error) = result {
         tracing::error!(%error, "event loop ended");
         eprintln!("nerve: event loop ended ({error})");

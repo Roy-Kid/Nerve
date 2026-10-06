@@ -1,6 +1,6 @@
 [package]
 name = "nerve-windows-surface"
-description = "Windows tray surface for the Nerve hub"
+description = "Rust presentation core for the native Windows Nerve surface"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,9 +10,19 @@ repository.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+# Retained only for migration regression comparisons; never shipped.
+legacy-ui = ["dep:eframe", "dep:egui", "dep:winit", "dep:wgpu", "dep:tray-icon", "dep:tauri-winrt-notification"]
+
+[[bin]]
+name = "nerve-windows-core"
+path = "src/core_main.rs"
+
 [[bin]]
 name = "nerve-windows-surface"
 path = "src/main.rs"
+required-features = ["legacy-ui"]
 
 [lib]
 name = "nerve_windows_surface"
@@ -37,17 +47,18 @@ time = { version = "0.3", features = ["macros"] }
 rustc-hash = "2"
 # The notification-area icon and its context menu. `muda` comes with it and is
 # what builds the menu.
-tray-icon = "0.21"
-muda = "0.18"
+tray-icon = { version = "0.21", optional = true }
+# Use tray_icon::menu exclusively: a second muda version has a different
+# global event channel and silently loses tray menu events.
 # The event loop the tray needs to receive clicks. It also owns the flyout
 # window, and its `scale_factor` is where the icon's DPI rung comes from —
 # which is how that stays a safe API call rather than `GetSystemMetricsForDpi`.
-winit = "0.30"
+winit = { version = "0.30", optional = true }
 # The flyout. `eframe` owns the window, the renderer and the event loop, which
 # is the point: an immediate-mode panel redrawn from a whole frame is the
 # natural consumer of a hub that publishes whole frames, and none of the
 # windowing glue is written here.
-eframe = { version = "0.32", default-features = false, features = [
+eframe = { version = "0.32", optional = true, default-features = false, features = [
     # DX12 on Windows, Metal here. The GL backend falls back to a GDI software
     # renderer over RDP and in bare VMs, where creating a context can fail
     # outright.
@@ -55,7 +66,12 @@ eframe = { version = "0.32", default-features = false, features = [
     "wayland",
     "x11",
 ] }
-egui = "0.32"
+egui = { version = "0.32", optional = true }
+# wgpu's DX12 backend is opt-in and eframe does not forward it; without it no
+# backend is compiled on Windows and the instance panics at startup. Declaring
+# the same wgpu version here turns the backend on for the whole graph.
+wgpu = { version = "25", optional = true, features = ["dx12"] }
+base64 = "0.22"
 # Open/Copy. `opener` calls `ShellExecuteW` inside rather than `cmd /C start`,
 # which has quoting and injection hazards with `&` in a path.
 opener = "0.8"
@@ -69,7 +85,7 @@ serde_json = "1"
 # this crate keeps `unsafe_code = "forbid"`.
 windows-registry = "0.6"
 # Toasts. The maintained fork that Tauri and notify-rust both use.
-tauri-winrt-notification = "0.7"
+tauri-winrt-notification = { version = "0.7", optional = true }
 
 [dev-dependencies]
 nerve-surface-core = { path = "../nerve-surface-core", features = ["testkit"] }

@@ -3,6 +3,17 @@ use std::time::{Duration, Instant};
 use nerve_windows_surface::flyout::visibility::Visibility;
 
 #[test]
+fn explicit_open_of_visible_panel_ignores_stale_focus_loss() {
+    let mut panel = Visibility::default();
+    panel.show();
+    panel.lost_focus(Some(true));
+    panel.show();
+    assert!(!panel.lost_focus(Some(false)));
+    assert!(!panel.lost_focus(Some(true)));
+    assert!(panel.lost_focus(Some(false)));
+}
+
+#[test]
 fn opening_waits_for_focus_before_dismissing() {
     let mut panel = Visibility::default();
     panel.show();

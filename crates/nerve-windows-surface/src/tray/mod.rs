@@ -2,6 +2,7 @@
 
 pub mod bands;
 pub mod dpi;
+#[cfg(feature = "legacy-ui")]
 pub mod events;
 pub mod icon;
 pub mod signature;

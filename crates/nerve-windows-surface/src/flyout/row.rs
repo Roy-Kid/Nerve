@@ -11,7 +11,7 @@ use super::theme::{color, secondary};
 use crate::tray::icon::Theme;
 
 /// The status dot's diameter.
-const DOT: f32 = 8.0;
+const DOT: f32 = 10.0;
 /// How many timeline entries the detail block shows.
 const RECENT: usize = 5;
 
@@ -38,20 +38,34 @@ pub fn show(
 ) -> (Response, Option<RowAction>) {
     let mut action = None;
 
-    let response = ui
-        .scope(|ui| {
+    let response = egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(8, 6))
+        .corner_radius(6)
+        .fill(if expanded {
+            ui.visuals().faint_bg_color
+        } else {
+            Color32::TRANSPARENT
+        })
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 1.0;
             ui.horizontal(|ui| {
                 dot(ui, StatusClass::of(job));
                 ui.add_space(6.0);
-                ui.add_sized(
-                    [(ui.available_width() - 55.0).max(0.0), 20.0],
-                    egui::Label::new(RichText::new(job.name.trim()).strong()).truncate(),
-                )
-                .on_hover_text(job.name.trim());
+                ui.allocate_ui_with_layout(
+                    Vec2::new((ui.available_width() - 55.0).max(0.0), 20.0),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        ui.add(
+                            egui::Label::new(RichText::new(job.name.trim()).size(13.0)).truncate(),
+                        )
+                        .on_hover_text(job.name.trim());
+                    },
+                );
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let age = age_label(now, job);
                     ui.label(
-                        RichText::new(age_label(now, job))
+                        RichText::new(if age == "-" { "" } else { &age })
                             .color(secondary(theme))
                             .small(),
                     );
@@ -59,15 +73,46 @@ pub fn show(
             });
             let activity = activity_text(job).trim();
             if !activity.is_empty() {
-                ui.add(
-                    egui::Label::new(RichText::new(activity).color(secondary(theme)).small())
-                        .truncate(),
-                )
-                .on_hover_text(activity);
+                ui.horizontal(|ui| {
+                    ui.add_space(DOT + 6.0 + ui.spacing().item_spacing.x);
+                    ui.add(
+                        egui::Label::new(RichText::new(activity).color(secondary(theme)).small())
+                            .truncate(),
+                    )
+                    .on_hover_text(activity);
+                });
             }
         })
         .response
-        .interact(Sense::click());
+        .interact(Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+
+    let c = egui::pos2(response.rect.right() - 3.0, response.rect.top() + 16.0);
+    let points = if expanded {
+        [
+            c + egui::vec2(-3.0, -1.5),
+            c + egui::vec2(0.0, 1.5),
+            c + egui::vec2(3.0, -1.5),
+        ]
+    } else {
+        [
+            c + egui::vec2(-1.5, -3.0),
+            c + egui::vec2(1.5, 0.0),
+            c + egui::vec2(-1.5, 3.0),
+        ]
+    };
+    ui.painter().add(egui::Shape::line(
+        points.to_vec(),
+        egui::Stroke::new(1.0_f32, secondary(theme).gamma_multiply(0.65)),
+    ));
+    if response.hovered() {
+        ui.painter().rect_stroke(
+            response.rect,
+            6,
+            egui::Stroke::new(0.5_f32, ui.visuals().window_stroke.color),
+            egui::StrokeKind::Inside,
+        );
+    }
 
     if expanded {
         ui.indent(&job.id, |ui| {

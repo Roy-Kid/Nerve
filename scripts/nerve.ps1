@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Nerve dev launcher for Windows — the counterpart to scripts/nerve.sh.
 
@@ -29,7 +29,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $Root = Split-Path -Parent $PSScriptRoot
-$Release = Join-Path $Root 'target\release'
+$Release = Join-Path $Root 'target\windows'
 $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\Nerve'
 $StartMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $Aumid = 'Nerve.Surface'
@@ -45,7 +45,7 @@ function Show-Help {
     @'
 Nerve (Windows)
 
-  -Build           cargo build --release, the portable crates
+  -Build           Rust hub/core + self-contained WinUI 3 publish (.NET 10 SDK)
   -Run             start the tray surface (build only when no binaries supplied)
   -Install         copy to %LOCALAPPDATA%\Programs\Nerve, Start Menu shortcut
   -Uninstall       remove all of the above, including the Run key
@@ -53,7 +53,7 @@ Nerve (Windows)
   -VerifyLoop      ingest contract end to end
   -VerifySurface   headless surface self-test against a real hub
   -BinaryDirectory use existing binaries from this folder (no Rust required)
-  -Test            cargo test, the portable crates
+  -Test            Rust tests + native host protocol tests
   -Help            this
 
 Nothing runs without a flag.
@@ -72,8 +72,11 @@ function Invoke-Cargo {
 }
 
 function Build-All {
-    Invoke-Cargo (@('build', '--release') + $Crates)
-    $script:Release = Join-Path $Root 'target\release'
+    Invoke-Cargo @('build', '--release', '-p', 'nerve-hub', '-p', 'nerve-windows-surface', '--bin', 'nerve-hub', '--bin', 'nerve-windows-core')
+    $script:Release = Join-Path $Root 'target\windows'
+    & dotnet publish (Join-Path $Root 'surfaces\windows\Nerve.Windows.csproj') -c Release -p:Platform=x64 -o $Release --nologo
+    if ($LASTEXITCODE -ne 0) { throw 'WinUI 3 publish failed' }
+    Copy-Item (Join-Path $Root 'target\release\nerve-hub.exe'), (Join-Path $Root 'target\release\nerve-windows-core.exe') $Release -Force
     $script:BinariesReady = $true
 }
 
@@ -89,16 +92,16 @@ function Prepare-Binaries {
         Build-All
         return
     }
-    foreach ($exe in @('nerve-hub.exe', 'nerve-windows-surface.exe')) {
+    foreach ($exe in @('nerve-hub.exe', 'nerve-windows-core.exe', 'nerve-windows-surface.exe', 'nerve-windows-surface.dll', 'nerve-windows-surface.runtimeconfig.json', 'nerve-windows-surface.pri', 'Microsoft.UI.Xaml.dll', 'Microsoft.WindowsAppRuntime.dll', 'coreclr.dll')) {
         if (-not (Test-Path -LiteralPath (Join-Path $Release $exe) -PathType Leaf)) {
-            throw "Missing $exe in $Release. Download both Nerve binaries."
+            throw "Missing $exe in $Release. Download and extract the complete Nerve Windows package."
         }
     }
     $script:BinariesReady = $true
 }
 
 function Assert-InstallStopped {
-    foreach ($name in @('nerve-hub', 'nerve-windows-surface')) {
+    foreach ($name in @('nerve-hub', 'nerve-windows-core', 'nerve-windows-surface')) {
         foreach ($process in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
             if ($process.Path -and
                 ([IO.Path]::GetDirectoryName($process.Path) -eq $InstallDir)) {
@@ -134,13 +137,23 @@ function Wait-Hub {
     return $false
 }
 
+function Copy-NativePayload {
+    New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+    # Native self-contained apps have DLLs, PRI files and resource subfolders.
+    # Install the complete payload, not just the two executable launchers.
+    if ([IO.Path]::GetFullPath($Release) -ne [IO.Path]::GetFullPath($InstallDir)) {
+        foreach ($item in Get-ChildItem -LiteralPath $Release) {
+            if ($item.Name -notin @('scripts', 'fixtures')) {
+                Copy-Item -LiteralPath $item.FullName -Destination $InstallDir -Recurse -Force
+            }
+        }
+    }
+}
+
 function Install-Nerve {
     Prepare-Binaries
     Assert-InstallStopped
-    New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-    foreach ($exe in @('nerve-hub.exe', 'nerve-windows-surface.exe')) {
-        Copy-Item (Join-Path $Release $exe) (Join-Path $InstallDir $exe) -Force
-    }
+    Copy-NativePayload
 
     # A Start Menu entry for launching the installed surface. Notification
     # identity is registered separately below; WScript does not set an AUMID.
@@ -277,7 +290,12 @@ if ($Uninstall -and ($Install -or $Run -or $Build -or $VerifyLoop -or $VerifySur
 }
 
 if ($Build)         { Build-All }
-if ($Test)          { Invoke-Cargo (@('test') + $Crates) }
+if ($Test) {
+    Invoke-Cargo (@('test') + $Crates)
+    Invoke-Cargo @('build', '-p', 'nerve-windows-surface', '--bin', 'nerve-windows-core')
+    & dotnet run --project (Join-Path $Root 'surfaces\windows\tests\Nerve.Windows.Tests.csproj') -- $Root
+    if ($LASTEXITCODE -ne 0) { throw 'Native host protocol tests failed' }
+}
 if ($Install)       { Install-Nerve }
 if ($Uninstall)     { Uninstall-Nerve }
 if ($Demo)          { Invoke-Demo }
@@ -286,5 +304,5 @@ if ($VerifySurface) { Invoke-VerifySurface }
 if ($Run) {
     Prepare-Binaries
     $runDirectory = if ($Install) { $InstallDir } else { $Release }
-    Start-Process (Join-Path $runDirectory 'nerve-windows-surface.exe')
+    Start-Process (Join-Path $runDirectory 'nerve-windows-surface.exe') -WindowStyle Hidden
 }

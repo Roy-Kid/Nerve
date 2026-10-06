@@ -60,6 +60,9 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
 
       # nerve-tmux-surface is unix-only by design (tmux has no Windows port),
       # so the Windows job names the portable crates rather than `--workspace`.
@@ -71,12 +74,24 @@ jobs:
         run: >
           cargo test -p nerve-platform -p nerve-hub -p nerve-surface-core -p nerve-windows-surface
           --all-features
-      - name: build the hub and the tray surface
-        run: cargo build --release -p nerve-hub -p nerve-windows-surface
+      - name: build Rust hub and desktop core (no GUI renderer)
+        run: cargo build --release -p nerve-hub -p nerve-windows-surface --bin nerve-hub --bin nerve-windows-core
+
+      - name: native host protocol tests
+        shell: powershell
+        run: |
+          cargo build -p nerve-windows-surface --bin nerve-windows-core
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet run --project surfaces/windows/tests/Nerve.Windows.Tests.csproj -- $PWD.Path
+
+      - name: publish native WinUI 3 host
+        run: dotnet publish surfaces/windows/Nerve.Windows.csproj -c Release -p:Platform=x64 -o package --nologo
 
       - name: verify the Windows ingest loop
         shell: powershell
-        run: ./scripts/nerve.ps1 -VerifyLoop -BinaryDirectory ./target/release
+        run: |
+          Copy-Item target/release/nerve-hub.exe, target/release/nerve-windows-core.exe package/
+          ./scripts/nerve.ps1 -VerifyLoop -BinaryDirectory ./package
 
       - name: test Windows installer helpers
         shell: powershell
@@ -86,7 +101,6 @@ jobs:
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force package/scripts, package/fixtures | Out-Null
-          Copy-Item target/release/nerve-hub.exe, target/release/nerve-windows-surface.exe package/
           Copy-Item scripts/nerve.ps1 package/scripts/
           Copy-Item fixtures/demo_snapshot.json package/fixtures/
 

@@ -42,6 +42,13 @@ vsc-ext/*.vsix
 # Rust (cargo workspace)
 /target/
 
+# Native Windows host
+surfaces/windows/bin/
+surfaces/windows/obj/
+surfaces/windows/tests/bin/
+surfaces/windows/tests/obj/
+.vs/
+
 # MCP browser artifacts (screenshots, traces)
 .playwright-mcp/
 **/.playwright-mcp/

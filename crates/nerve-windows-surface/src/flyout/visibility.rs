@@ -11,9 +11,9 @@ pub struct Visibility {
 
 impl Visibility {
     pub fn show(&mut self) {
-        if !self.visible {
-            self.focused_once = false;
-        }
+        // Even an already visible window may be reactivated by the tray menu.
+        // Its previous focus observation must not dismiss the new request.
+        self.focused_once = false;
         self.visible = true;
     }
 

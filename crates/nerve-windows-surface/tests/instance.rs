@@ -4,6 +4,21 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
 
 use nerve_windows_surface::platform::instance::{claim, Claim, LOCK_PORT};
 
+#[test]
+fn second_launch_requests_activation_without_claiming_another_stream() {
+    let Claim::Owned(listener) = claim(0).expect("ephemeral lock") else {
+        panic!("owner");
+    };
+    let port = listener.local_addr().unwrap().port();
+    nerve_windows_surface::platform::instance::activate(port).expect("activate");
+    assert!(listener.accept().is_ok());
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    assert!(matches!(claim(port).unwrap(), Claim::Yield));
+}
+
 /// A port nothing else in this suite will take.
 fn free_port() -> u16 {
     let listener = TcpListener::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)))

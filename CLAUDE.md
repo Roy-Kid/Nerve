@@ -16,7 +16,8 @@ Stack: `nerve-hub` + tmux helper (Rust, `crates/`), SwiftUI menu-bar app (`Nerve
 | State hub daemon | `crates/nerve-hub/` (ingest contract, SSE frames, refcount lifecycle) |
 | macOS app (surface) | `Nerve/Nerve/` (App, Models, Store, Services incl. `Services/Hub/`, UI) |
 | tmux surface | `surfaces/tmux/` (TPM entry) + `crates/nerve-tmux-surface/` (helper) |
-| Windows surface | `crates/nerve-windows-surface/` (tray icon + flyout) |
+| Windows native UI | `surfaces/windows/` (C# / WinUI 3 window, list, settings and native tray) |
+| Windows presentation core | `crates/nerve-windows-surface/` → `nerve-windows-core` (Rust binary, NDJSON protocol; legacy egui is opt-in only) |
 | Shared surface logic | `crates/nerve-surface-core/` (frames, status, grouping, hub client) |
 | OS primitives | `crates/nerve-platform/` (wire paths, process liveness) |
 | VS Code surface | `vsc-ext/` (Activity Bar + status bar; rslib/rspack) |
@@ -67,6 +68,7 @@ cd index && npm test && npm run build               # site tests + static build
 6. **Display only** — Nerve never reverse-controls agents or jobs (no approve/cancel/submit_input). Local actions: **Open/Focus** (location) + Copy; rows leave via SessionEnd / slot supersede / PID reap. Attention means “return to agent UI”, not “type here”.
 7. **Surfaces are peers** — macOS app, tmux plugin, VS Code extension, Windows tray, and Tether plugin only consume the hub contract (`GET /v1/jobs`, `GET /v1/stream` full frames with `departed` terminal states); none owns state, none knows the others. The hub never sends OS notifications. It *does* count open streams and publish a **notify lease** (`notify.policy` `single`|`all`, elected `owner`) so two surfaces on one machine do not both banner the same Ask. Default is `single` (prefer `macos`, then `tether`, then `windows`, then `vscode`, then `tmux`). `PUT /v1/notify` sets the policy. Each surface still dedupes locally on the Ask channel (`reason ∈ Ask`, `level ≥ suggested`, first sight or level upgrade, 120 s window) and only fires when the lease says it may. Hook wire contract is unchanged.
 8. **Public docs** — edit `index/src/docs/content.ts` (and site UI), not a repo `docs/` folder. Keep root/plugin READMEs as short pointers.
+9. **Native application UI, Rust binary core** — macOS uses SwiftUI/AppKit and Windows uses WinUI 3/Windows Shell. Native hosts render and perform platform interaction; core state/protocol/presentation rules live in Rust binaries. Do not introduce a hand-drawn cross-platform GUI or move domain rules into C#. VS Code and tmux use their host's own UI facilities. Windows host/core protocol is in `surfaces/windows/README.md`.
 
 ## Default workflow
 

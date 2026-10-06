@@ -5,6 +5,7 @@ Agent entry for Codex / Grok / other harnesses. Same contract as [`CLAUDE.md`](.
 ## Repo map
 
 - **App:** `Nerve/Nerve/` (Swift, menu bar + ingest)
+- **Windows UI:** `surfaces/windows/` (C# / WinUI 3); presentation and hub connection in Rust `nerve-windows-core`. Legacy egui is an opt-in regression feature, not shipped.
 - **VS Code surface:** `vsc-ext/` (rslib/rspack; `cd vsc-ext && npm test`)
 - **Tether surface:** `surfaces/tether/` (`swift test --package-path surfaces/tether`)
 - **Plugin:** `plugins/nerve/hooks/` — Claude `nerve.js` (Node exec), Codex `nerve.py` (python3), Grok `grok-post.js` (command POST; Grok `type: http` cannot reach loopback)

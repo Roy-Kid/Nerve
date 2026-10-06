@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 /// Panel size limits, mirroring `SettingsStore.clampPanelWidth/Height`.
 pub const WIDTH: (f32, f32) = (320.0, 560.0);
 pub const HEIGHT: (f32, f32) = (240.0, 800.0);
-const DEFAULT_SIZE: (f32, f32) = (380.0, 460.0);
+const DEFAULT_SIZE: (f32, f32) = (340.0, 360.0);
 
 /// How rows are bucketed in the panel.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

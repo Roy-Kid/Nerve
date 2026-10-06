@@ -65,14 +65,36 @@ fn an_idle_icon_still_shows_something() {
 #[test]
 fn an_idle_icon_is_gray_and_not_a_status_colour() {
     let rgba = render(&spec(&Tally::default(), 32));
-    let (color, alpha) = pixel(&rgba, 32, 4, 16);
+    let (color, alpha) = pixel(&rgba, 32, 16, 16);
     assert!(alpha > 0, "idle bar missing at its own centre");
-    // Lifted for the taskbar, so compare loosely against the chrome gray.
-    let gray = palette::INACTIVE;
-    let distance = (i32::from(color.r) - i32::from(gray.r)).abs()
-        + (i32::from(color.g) - i32::from(gray.g)).abs()
-        + (i32::from(color.b) - i32::from(gray.b)).abs();
-    assert!(distance < 40, "idle painted {color:?}");
+    assert_eq!(color.r, color.g);
+    assert_eq!(color.g, color.b);
+    assert_eq!(alpha, 255, "idle target must be opaque");
+}
+
+#[test]
+fn idle_is_centered_and_high_contrast_at_every_dpi_rung() {
+    for size in RUNGS {
+        for theme in [Theme::Light, Theme::Dark] {
+            let rgba = render(&IconSpec {
+                theme,
+                ..spec(&Tally::default(), size)
+            });
+            let (ink, alpha) = pixel(&rgba, size, size / 2, size / 2);
+            assert_eq!(alpha, 255);
+            match theme {
+                Theme::Light => assert!(ink.r < 80),
+                Theme::Dark => assert!(ink.r > 210),
+            }
+            let first = (0..size)
+                .find(|x| pixel(&rgba, size, *x, size / 2).1 > 0)
+                .unwrap();
+            let last = (0..size)
+                .rfind(|x| pixel(&rgba, size, *x, size / 2).1 > 0)
+                .unwrap();
+            assert!((first as i32 - (size - 1 - last) as i32).abs() <= 1);
+        }
+    }
 }
 
 #[test]

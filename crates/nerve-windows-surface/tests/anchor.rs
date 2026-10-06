@@ -153,3 +153,13 @@ fn viewport_commands_convert_physical_pixels_to_logical_points() {
         assert!(y + 460.0 < 1040.0);
     }
 }
+
+#[test]
+fn moving_between_different_dpi_monitors_preserves_physical_position() {
+    use nerve_windows_surface::flyout::anchor::place_for_viewport;
+    let screen = Rect::new(-3840, 0, 3840, 2160);
+    let tray = Rect::new(-200, 2100, 32, 32);
+    let (x, y) = place_for_viewport(tray, screen, (380.0, 460.0), 2.0, 1.5);
+    assert!((x * 1.5 + 760.0 - tray.right() as f32).abs() < 1.0);
+    assert!(y * 1.5 + 920.0 < tray.y as f32);
+}

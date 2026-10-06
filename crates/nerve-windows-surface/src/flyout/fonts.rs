@@ -47,6 +47,23 @@ fn font_dirs() -> Vec<PathBuf> {
 /// Returns whether anything was added, so a caller can say so in a log rather
 /// than leave a user wondering why their job names are boxes.
 pub fn install_cjk(definitions: &mut FontDefinitions) -> bool {
+    // Use the Windows UI face for Latin text; keep egui's symbol fallback.
+    #[cfg(windows)]
+    for directory in font_dirs() {
+        if let Ok(bytes) = std::fs::read(directory.join("segoeui.ttf")) {
+            let name = "Segoe UI".to_string();
+            definitions.font_data.insert(
+                name.clone(),
+                std::sync::Arc::new(FontData::from_owned(bytes)),
+            );
+            definitions
+                .families
+                .entry(FontFamily::Proportional)
+                .or_default()
+                .insert(0, name);
+            break;
+        }
+    }
     let Some((name, bytes)) = load_first() else {
         return false;
     };

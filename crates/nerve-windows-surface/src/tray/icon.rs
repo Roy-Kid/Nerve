@@ -31,10 +31,13 @@ const MIN_SPAN: f32 = 0.55;
 /// full-height band stops being a bar and becomes a circle, which reads as a
 /// dot and loses the whole stacked-bar metaphor.
 const RADIUS: f32 = 1.0 / 5.0;
-/// How much of the icon the idle mark occupies.
-const IDLE_WIDTH: f32 = 0.45;
-/// How much of the idle mark's colour survives.
-const IDLE_ALPHA: f32 = 0.55;
+/// The idle mark's length, as a fixed share of the icon.
+///
+/// Unlike the working stack, whose length scales with how much is running, the
+/// resting mark must not move: a constant length is what reads as "idle" rather
+/// than "a small job". Kept at `MIN_SPAN` so it matches the shortest possible
+/// working stack and never grows or shrinks with DPI rung.
+const IDLE_WIDTH: f32 = MIN_SPAN;
 /// How much of an offline stack survives.
 const OFFLINE_ALPHA: f32 = 0.40;
 
@@ -139,18 +142,24 @@ fn draw_bands(pixmap: &mut Pixmap, size: u32, spec: &IconSpec) {
 }
 
 fn draw_idle(pixmap: &mut Pixmap, size: u32, spec: &IconSpec) {
-    let height = (size as f32 / 5.0).max(2.0);
+    let height = (size as f32 / 4.0).max(3.0);
     let width = size as f32 * IDLE_WIDTH;
+    let x = (size as f32 - width) / 2.0;
     let y = (size as f32 - height) / 2.0;
     fill_bar(
         pixmap,
-        0.0,
+        x,
         y,
         width,
         height,
         size,
-        spec.theme.lift(palette::INACTIVE),
-        IDLE_ALPHA * alpha_for(spec),
+        // Idle must remain an obvious click target on both taskbar themes.
+        // A translucent mid-gray dash disappears at notification-area sizes.
+        match spec.theme {
+            Theme::Light => Rgb::new(65, 65, 65),
+            Theme::Dark => Rgb::new(225, 225, 225),
+        },
+        alpha_for(spec),
     );
 }
 

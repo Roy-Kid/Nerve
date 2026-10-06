@@ -191,14 +191,60 @@ impl ProcessSpawner for DetachedSpawner {
             }
         }
 
-        let child = Command::new(program)
+        let mut command = Command::new(program);
+        command
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::null());
+        // Redirecting stdio does not prevent Windows from allocating a console
+        // for the hub, which is a console executable started by a GUI surface.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        let child = command
             .spawn()
             .map_err(|err| SpawnError::new(err.to_string()))?;
         self.started = Some(child);
         Ok(())
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn detached_console_child_has_no_console_window() {
+        let powershell = std::path::PathBuf::from(std::env::var_os("WINDIR").unwrap())
+            .join("System32/WindowsPowerShell/v1.0/powershell.exe");
+        let script = r#"Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class ConsoleProbe { [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow(); }'; if ([ConsoleProbe]::GetConsoleWindow() -ne [IntPtr]::Zero) { exit 42 }; exit 0"#;
+        let mut spawner = DetachedSpawner::new();
+        spawner
+            .spawn(
+                &powershell,
+                &["-NoProfile", "-NonInteractive", "-Command", script],
+            )
+            .unwrap();
+        let child = spawner.started.as_mut().unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                assert!(
+                    status.success(),
+                    "child allocated a console or probe failed: {status}"
+                );
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("console probe timed out");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 }

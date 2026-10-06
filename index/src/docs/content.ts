@@ -173,7 +173,7 @@ export const docPages: DocPage[] = [
       },
       {
         type: 'p',
-        text: 'On macOS a continuous ribbon appears in the menu bar — no Dock icon, no floating window. On Windows the same state folds into a notification-area icon, and the ribbon itself moves into the flyout behind it.',
+        text: 'On macOS a continuous ribbon appears in the menu bar — no Dock icon, no floating window. On Windows the same state folds into a notification-area icon, with a compact status panel behind it.',
       },
       { type: 'h2', text: 'Ribbon gestures' },
       {
@@ -613,7 +613,7 @@ npm run watch`,
   {
     slug: 'windows',
     title: 'Windows tray',
-    lede: 'Windows has no menu bar, so the surface lives in the notification area — and the ribbon moves into the panel behind it.',
+    lede: 'Windows has no menu bar, so Nerve lives in the notification area with a compact status panel behind it.',
     blocks: [
       { type: 'h2', text: 'What the icon says' },
       {
@@ -647,13 +647,14 @@ npm run watch`,
       { type: 'h2', text: 'The panel' },
       {
         type: 'p',
-        text: 'Left-click the icon to open or close the panel; right-click for startup and notification preferences. The real ribbon runs along the top, drawn with the same weights as the macOS menu bar, then counts, then rows grouped by machine, priority or status. Clicking a row opens its detail: the prompt you actually typed, where it is running, Open and Copy, and the last five timeline entries.',
+        text: 'Click the tray icon to open the panel. Right-click for Open Nerve or Quit. The Windows UI uses native WinUI 3 controls and a standard draggable, resizable title bar. Rust binaries own the hub connection, status, grouping and notification policy. The gear button opens Settings; the power button quits Nerve. Both remain available when there are no jobs. Launching Nerve again opens the existing panel; starting at login keeps it hidden. Rows group by machine, priority or status. Clicking a row opens its prompt, location, Open and Copy, and the last five timeline entries.',
       },
       {
         type: 'ul',
         items: [
           'It dismisses on focus loss or Escape. No taskbar button and no Alt-Tab entry \u2014 it is a glance, not a window to manage.',
-          'Resize the panel to suit your display; its size is remembered next time. Escape, focus loss and Alt+F4 hide the panel. Use Quit in the tray menu to exit Nerve.',
+          'Use Up and Down to select a job; Enter or Space toggles its details. The selected row scrolls into view. Tab moves between controls.',
+          'Drag the native title bar to move the panel, or its border/corner to resize it; its size is remembered next time. Escape, focus loss, the close button and Alt+F4 hide the panel. Use Quit in the tray menu or panel power button to exit Nerve.',
           'Hiding it never drops the stream. That connection is what keeps the hub alive, so it outlives any window.',
           'Open takes you to the job; Copy puts its line on the clipboard. There is no approve, cancel or submit \u2014 Nerve never reverse-controls an agent.',
           'A job on another machine is never opened locally: the same path very likely exists here too, and opening the wrong one silently is worse than opening nothing. Its location is copied instead, and the panel says why.',
@@ -666,16 +667,13 @@ npm run watch`,
         code: `# from the extracted Windows download (no Rust required)
 .\\scripts\\nerve.ps1 -Install -Run
 
-# from a checkout (requires Rust and the MSVC build tools)
+# from a checkout (requires Rust, .NET 10 SDK and Windows build tools)
 .\\scripts\\nerve.ps1 -Install
-.\\scripts\\nerve.ps1 -Run
-
-# or just the binaries
-cargo install nerve-hub nerve-windows-surface`,
+.\\scripts\\nerve.ps1 -Run`,
       },
       {
         type: 'p',
-        text: '-Install copies both binaries to %LOCALAPPDATA%\\Programs\\Nerve and creates the Start Menu shortcut. The Windows download includes this script and both executables, so installation does not require compiling. From a checkout, the script builds them first. To use binaries in another folder, add -BinaryDirectory C:\\path\\to\\binaries. Quit Nerve and other connected surfaces before upgrading or uninstalling, then allow the hub 30 seconds to stop. -Uninstall keeps your preferences.',
+        text: '-Install copies the complete native UI package, including runtime DLLs/resources, nerve-windows-core.exe and nerve-hub.exe, to %LOCALAPPDATA%\\Programs\\Nerve and creates a Start Menu shortcut. Extract the whole download; users do not need Rust, .NET or a separately installed Windows App Runtime. From a checkout, the script builds and publishes to target\\windows first. To use a package in another folder, add -BinaryDirectory C:\\path\\to\\package. Quit Nerve and other connected surfaces before upgrading or uninstalling, then allow the hub 30 seconds to stop. -Uninstall keeps your preferences.',
       },
       {
         type: 'callout',
@@ -685,7 +683,7 @@ cargo install nerve-hub nerve-windows-surface`,
       { type: 'h2', text: 'Notifications' },
       {
         type: 'p',
-        text: 'Off by default. You very plausibly run the VS Code extension on the same machine, and surfaces are peers that cannot know about each other \u2014 so two banners for one Ask is a worse first impression than none. Turn them on from the tray\u2019s right-click menu; Notification sound is a separate switch. The app registers its notification identity, but delivery still depends on Windows notification settings and unpackaged-app support.',
+        text: 'Off by default. You very plausibly run the VS Code extension on the same machine, and surfaces are peers that cannot know about each other \u2014 so two banners for one Ask is a worse first impression than none. Turn them on from the panel gear button; Notification sound is a separate switch. The app registers its notification identity, but delivery still depends on Windows notification settings and unpackaged-app support.',
       },
       {
         type: 'ul',
@@ -699,7 +697,7 @@ cargo install nerve-hub nerve-windows-surface`,
       { type: 'h2', text: 'Start at login' },
       {
         type: 'p',
-        text: 'Off by default, and in the tray menu when you want it. It writes HKCU\\...\\CurrentVersion\\Run, which appears in Task Manager \u2192 Startup \u2014 where you would look to remove it. Worth knowing: because the surface holds the stream open, autostart makes nerve-hub.exe permanently resident rather than a process that exits when you stop looking.',
+        text: 'Off by default, and available in the panel Settings when you want it. It writes HKCU\\...\\CurrentVersion\\Run, which appears in Task Manager \u2192 Startup \u2014 where you would look to remove it. Worth knowing: because the surface holds the stream open, autostart makes nerve-hub.exe permanently resident rather than a process that exits when you stop looking.',
       },
       { type: 'h2', text: 'What is not here' },
       {
@@ -1352,7 +1350,7 @@ const zhTetherPage: DocPage = {
 const zhWindowsPage: DocPage = {
   slug: 'windows',
   title: 'Windows 托盘',
-  lede: 'Windows 没有菜单栏，所以界面住在通知区——而真正的状态条移进了它背后的面板。',
+  lede: 'Windows 没有菜单栏，所以 Nerve 位于通知区，点击即可打开紧凑的状态面板。',
   blocks: [
     { type: 'h2', text: '图标在说什么' },
     {
@@ -1386,13 +1384,14 @@ const zhWindowsPage: DocPage = {
     { type: 'h2', text: '面板' },
     {
       type: 'p',
-      text: '点图标。顶部是真正的状态条，用与 macOS 菜单栏完全相同的权重绘制，下面是计数，再下面是按机器、优先级或状态分组的行。点一行展开详情：你实际输入的 prompt、它在哪运行、Open 与 Copy，以及最近五条时间线。',
+      text: '点击托盘图标打开面板，右键菜单提供 Open Nerve 和 Quit。Windows 界面使用原生 WinUI 3 控件与可拖动、缩放的标准标题栏；Rust 二进制负责 hub 连接、状态、分组和通知规则。顶部齿轮打开设置，电源图标退出 Nerve；没有任务时也可使用。再次启动会唤起已有面板，开机自启则保持隐藏。任务按机器、优先级或状态分组。点一行展开 prompt、运行位置、Open 与 Copy，以及最近五条时间线。',
     },
     {
       type: 'ul',
       items: [
         '失去焦点或按 Esc 即消失。没有任务栏按钮，也不出现在 Alt-Tab 里——它是一瞥，不是需要管理的窗口。',
-        '隐藏面板绝不会断开数据流。那条连接正是让 hub 活着的东西，所以它比任何窗口活得久。',
+        '上下方向键选择任务，Enter 或空格切换详情；选中行会自动滚入视野。Tab 在控件之间移动。拖动原生标题栏移动面板，拖动窗口边框或角落调整大小，下次打开会保留尺寸。关闭按钮与 Alt+F4 只隐藏面板。',
+        '从右键菜单选择 Quit 或点击顶部电源图标才会退出；Esc、失焦和 Alt+F4 只隐藏面板。隐藏面板绝不会断开数据流。那条连接正是让 hub 活着的东西，所以它比任何窗口活得久。',
         'Open 带你去那个任务，Copy 把它那一行放进剪贴板。没有 approve、cancel 或 submit——Nerve 从不反向控制 agent。',
         '别的机器上的任务绝不会在本地打开：同样的路径在这台机器上很可能也存在，静默打开错误的那个比什么都不打开更糟。它会改为复制位置，并告诉你为什么。',
       ],
@@ -1401,16 +1400,16 @@ const zhWindowsPage: DocPage = {
     {
       type: 'code',
       lang: 'powershell',
-      code: `# 从仓库
-.\\scripts\\nerve.ps1 -Install
-.\\scripts\\nerve.ps1 -Run
+      code: `# 从完整解压的下载包（无需 Rust 或 .NET）
+.\\scripts\\nerve.ps1 -Install -Run
 
-# 或者只要二进制
-cargo install nerve-hub nerve-windows-surface`,
+# 从仓库（需要 Rust、.NET 10 SDK 和 Windows 构建工具）
+.\\scripts\\nerve.ps1 -Install
+.\\scripts\\nerve.ps1 -Run`,
     },
     {
       type: 'p',
-      text: '-Install 会把两个二进制复制到 %LOCALAPPDATA%\\Programs\\Nerve 并创建开始菜单快捷方式。这个快捷方式不是装饰：它携带 AppUserModelID，而那正是未打包应用能以自己的名义弹出系统通知的前提。cargo install 没有快捷方式，因此也没有系统通知。',
+      text: '-Install 把完整原生 UI 包、运行时 DLL 和资源、nerve-windows-core.exe 及 nerve-hub.exe 复制到 %LOCALAPPDATA%\\Programs\\Nerve，并创建开始菜单快捷方式。请完整解压下载包，用户无需另装 Rust、.NET 或 Windows App Runtime。从仓库构建时会先发布到 target\\windows。其他包目录可用 -BinaryDirectory 指定。升级或卸载前请退出所有连接的界面并等待 hub 停止；-Uninstall 保留偏好设置。',
     },
     {
       type: 'callout',
@@ -1420,7 +1419,7 @@ cargo install nerve-hub nerve-windows-surface`,
     { type: 'h2', text: '系统通知' },
     {
       type: 'p',
-      text: '默认关闭。你很可能在同一台机器上也装了 VS Code 扩展，而各个界面互为对等、彼此并不知晓——所以同一个 Ask 弹两次通知，比一次都不弹的第一印象更差。要开就从托盘右键菜单开。',
+      text: '默认关闭。你很可能在同一台机器上也装了 VS Code 扩展，而各个界面互为对等、彼此并不知晓——所以同一个 Ask 弹两次通知，比一次都不弹的第一印象更差。在面板顶部的齿轮设置 中开启；通知声音可单独设置。',
     },
     {
       type: 'ul',
@@ -1434,7 +1433,7 @@ cargo install nerve-hub nerve-windows-surface`,
     { type: 'h2', text: '开机自启' },
     {
       type: 'p',
-      text: '默认关闭，需要时从托盘菜单打开。它写入 HKCU\\...\\CurrentVersion\\Run，会出现在任务管理器 → 启动项里，也就是你想关掉它时会去找的地方。值得知道的是：因为界面会一直持有数据流，开启自启会让 nerve-hub.exe 变成常驻进程，而不是你不看时就退出的那种。',
+      text: '默认关闭，需要时从面板顶部的齿轮设置 打开。它写入 HKCU\\...\\CurrentVersion\\Run，会出现在任务管理器 → 启动项里，也就是你想关掉它时会去找的地方。值得知道的是：因为界面会一直持有数据流，开启自启会让 nerve-hub.exe 变成常驻进程，而不是你不看时就退出的那种。',
     },
     { type: 'h2', text: '这里没有什么' },
     {
@@ -1732,7 +1731,7 @@ const zhDocPages: DocPage[] = [
       },
       {
         type: 'p',
-        text: 'macOS 上菜单栏会出现一条连续状态条——没有 Dock 图标，也没有悬浮窗口。Windows 上同样的状态折叠进通知区图标，状态条本身则移进它背后的弹出面板。',
+        text: 'macOS 上菜单栏会出现一条连续状态条——没有 Dock 图标，也没有悬浮窗口。Windows 上同样的状态折叠进通知区图标，点击后打开紧凑的状态面板。',
       },
       { type: 'h2', text: '状态条操作' },
       {

@@ -115,6 +115,18 @@ pub fn place(anchor: &Anchor) -> (i32, i32) {
 
 /// Bridge physical tray coordinates and egui's logical viewport commands.
 pub fn place_scaled(tray: Rect, monitor: Rect, size: (f32, f32), scale: f32) -> (f32, f32) {
+    place_for_viewport(tray, monitor, size, scale, scale)
+}
+
+/// Size belongs to the destination monitor, but egui converts position using
+/// the current viewport's scale, which can differ before a monitor move.
+pub fn place_for_viewport(
+    tray: Rect,
+    monitor: Rect,
+    size: (f32, f32),
+    scale: f32,
+    viewport_scale: f32,
+) -> (f32, f32) {
     let scale = if scale.is_finite() && scale > 0.0 {
         scale
     } else {
@@ -128,7 +140,12 @@ pub fn place_scaled(tray: Rect, monitor: Rect, size: (f32, f32), scale: f32) -> 
             (size.1 * scale).round() as i32,
         ),
     });
-    (x as f32 / scale, y as f32 / scale)
+    let viewport_scale = if viewport_scale.is_finite() && viewport_scale > 0.0 {
+        viewport_scale
+    } else {
+        1.0
+    };
+    (x as f32 / viewport_scale, y as f32 / viewport_scale)
 }
 
 /// Clamp that survives a flyout larger than the monitor.

@@ -23,7 +23,7 @@ New-Item -ItemType Directory -Path $temp | Out-Null
 try {
     $Root = $temp
     $BinaryDirectory = $null
-    foreach ($exe in @('nerve-hub.exe', 'nerve-windows-surface.exe')) {
+    foreach ($exe in @('nerve-hub.exe', 'nerve-windows-core.exe', 'nerve-windows-surface.exe', 'nerve-windows-surface.dll', 'nerve-windows-surface.runtimeconfig.json', 'nerve-windows-surface.pri', 'Microsoft.UI.Xaml.dll', 'Microsoft.WindowsAppRuntime.dll', 'coreclr.dll')) {
         New-Item -ItemType File -Path (Join-Path $temp $exe) | Out-Null
     }
     $BinariesReady = $false
@@ -36,6 +36,28 @@ try {
     Prepare-Binaries
     Assert-True ($Release -eq $temp) 'Explicit binary directory should work outside a bundle'
 
+    New-Item -ItemType Directory -Path (Join-Path $temp 'zh-CN'), (Join-Path $temp 'scripts') | Out-Null
+    New-Item -ItemType File -Path (Join-Path $temp 'zh-CN\resources.pri'), (Join-Path $temp 'scripts\nerve.ps1') | Out-Null
+    $InstallDir = Join-Path $temp 'installation'
+    # Keep the destination outside the source payload so it cannot copy itself.
+    $payloadInstall = Join-Path ([IO.Path]::GetTempPath()) ('nerve-payload-test-' + [guid]::NewGuid())
+    $InstallDir = $payloadInstall
+    try {
+        Copy-NativePayload
+        Assert-True (Test-Path (Join-Path $InstallDir 'nerve-windows-surface.dll')) 'Native managed assembly must be installed'
+        Assert-True (Test-Path (Join-Path $InstallDir 'zh-CN\resources.pri')) 'Native resource subfolders must be installed'
+        Assert-True (-not (Test-Path (Join-Path $InstallDir 'scripts'))) 'Installer helpers are not runtime payload'
+    } finally {
+        $resolvedPayload = [IO.Path]::GetFullPath($payloadInstall)
+        if (-not $resolvedPayload.StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()))) { throw 'Unsafe payload cleanup path' }
+        Remove-Item -LiteralPath $resolvedPayload -Recurse -Force
+    }
+
+    Remove-Item -LiteralPath (Join-Path $temp 'coreclr.dll')
+    $BinariesReady = $false
+    Assert-Throws { Prepare-Binaries } 'Missing coreclr.dll'
+    New-Item -ItemType File -Path (Join-Path $temp 'coreclr.dll') | Out-Null
+
     Remove-Item (Join-Path $temp 'nerve-hub.exe')
     $BinariesReady = $false
     Assert-Throws { Prepare-Binaries } 'Missing nerve-hub.exe'
@@ -44,15 +66,22 @@ try {
     function Get-Process { [pscustomobject]@{ Path = (Join-Path $InstallDir 'nerve-hub.exe') } }
     Assert-Throws { Assert-InstallStopped } 'Quit Nerve'
 
-    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 17890)
-    try {
-        $listener.Start()
+    $portBusy = $false
+    $probe = [Net.Sockets.TcpClient]::new()
+    try { $portBusy = $probe.ConnectAsync('127.0.0.1', 17890).Wait(500) } catch { } finally { $probe.Dispose() }
+    if ($portBusy) {
         Assert-Throws { Assert-VerifyIsolated } 'already in use'
-    } finally {
-        $listener.Stop()
+    } else {
+        $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 17890)
+        try {
+            $listener.Start()
+            Assert-Throws { Assert-VerifyIsolated } 'already in use'
+        } finally { $listener.Stop() }
+        Assert-VerifyIsolated
     }
-    Assert-VerifyIsolated
     Write-Host 'ALL OK - prebuilt discovery, incomplete bundle, running install and verification isolation'
 } finally {
-    Remove-Item -LiteralPath $temp -Recurse -Force
+    $resolvedTemp = [IO.Path]::GetFullPath($temp)
+    if (-not $resolvedTemp.StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()))) { throw 'Unsafe installer test cleanup path' }
+    Remove-Item -LiteralPath $resolvedTemp -Recurse -Force
 }

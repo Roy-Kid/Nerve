@@ -11,10 +11,10 @@
 //! dies, however it dies — and binding `127.0.0.1` specifically, rather than
 //! `0.0.0.0`, raises no Windows Defender Firewall prompt.
 //!
-//! Nothing ever connects to it. Holding the listener *is* the lock.
+//! A second manual launch connects to request activation of the existing panel.
 
 use std::io;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
 
 /// One above the hub's own port, and deliberately adjacent to it: the two
 /// locks are the same idea and should be findable together.
@@ -45,8 +45,20 @@ impl Claim {
 pub fn claim(port: u16) -> io::Result<Claim> {
     let address = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
     match TcpListener::bind(address) {
-        Ok(listener) => Ok(Claim::Owned(listener)),
+        Ok(listener) => {
+            listener.set_nonblocking(true)?;
+            Ok(Claim::Owned(listener))
+        }
         Err(error) if error.kind() == io::ErrorKind::AddrInUse => Ok(Claim::Yield),
         Err(error) => Err(error),
     }
+}
+
+/// No payload, commands, or state: connecting only asks the owner to show itself.
+pub fn activate(port: u16) -> io::Result<()> {
+    TcpStream::connect_timeout(
+        &SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
+        std::time::Duration::from_millis(500),
+    )
+    .map(|_| ())
 }

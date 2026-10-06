@@ -1,3 +1,4 @@
+#![cfg(feature = "legacy-ui")]
 use nerve_windows_surface::flyout::view::empty_message;
 
 #[test]
