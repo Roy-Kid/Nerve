@@ -282,11 +282,11 @@ export const messages: Record<Locale, Messages> = {
     preview: {
       status: {
         problem: 'Problem',
-        attention: 'Attention',
+        attention: 'Needs you',
         running: 'Running',
         monitor: 'Monitor',
-        success: 'Success',
-        inactive: 'Inactive',
+        success: 'Completed',
+        inactive: 'Ready / idle',
       },
       mac: {
         livePreview: 'Live preview',
@@ -473,7 +473,7 @@ export const messages: Record<Locale, Messages> = {
         running: '运行中',
         monitor: '监视中',
         success: '已完成',
-        inactive: '未活动',
+        inactive: '就绪 / 空闲',
       },
       mac: {
         livePreview: '实时预览',

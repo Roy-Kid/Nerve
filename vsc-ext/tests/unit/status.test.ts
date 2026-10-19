@@ -1,3 +1,4 @@
+import { project } from "../project";
 /**
  * Status derivation golden — transcribed from
  * `crates/nerve-tmux-surface/tests/status.rs` / `Subject.swift:38-100`.
@@ -9,7 +10,7 @@ import { matchesFilter } from "../../src/model/filter";
 import { statusOf, STATUS_PRIORITY } from "../../src/model/status";
 
 function job(value: Record<string, unknown>): Job {
-  const parsed = parseJob({ id: "a", ...value });
+  const parsed = parseJob(project({ id: "a", ...value }));
   if (!parsed) throw new Error("parseJob rejected a test fixture");
   return parsed;
 }

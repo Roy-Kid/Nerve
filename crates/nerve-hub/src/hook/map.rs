@@ -366,9 +366,6 @@ fn notification(payload: &Value) -> Facets {
         if !bg.is_empty() {
             return background_work(bg);
         }
-        if ntype == "idle_prompt" && classify_bg_wait_toast(&summary).is_some() {
-            return facets_for_bg_wait_toast(&summary);
-        }
         let attention_summary = if !summary.is_empty() && ntype != "idle_prompt" {
             summary
         } else {
@@ -386,9 +383,6 @@ fn notification(payload: &Value) -> Facets {
 
     if !bg.is_empty() {
         return background_work(bg);
-    }
-    if classify_bg_wait_toast(&summary).is_some() {
-        return facets_for_bg_wait_toast(&summary);
     }
     Facets::active("info", Some(summary), None)
 }
@@ -561,48 +555,6 @@ fn task_work_kind(task: &Value) -> &'static str {
         return "shell";
     }
     "subagent"
-}
-
-fn classify_bg_wait_toast(text: &str) -> Option<&'static str> {
-    let s = text.to_ascii_lowercase();
-    let s = s.split_whitespace().collect::<Vec<_>>().join(" ");
-    if s.is_empty() {
-        return None;
-    }
-    let has_shell = s.contains("shell");
-    let has_monitor = s.contains("monitor");
-    let has_agent = s.contains("agent");
-    let still = s.contains("still running") || s.contains("still run");
-    let waiting = s.contains("waiting") || s.contains("finish") || s.contains("running");
-    if still && (has_shell || has_monitor) {
-        if has_monitor && !has_shell && !has_agent {
-            return Some("monitor");
-        }
-        return Some("running");
-    }
-    if has_agent
-        && waiting
-        && (s.contains("background") || s.contains("waiting for") || s.contains("finish"))
-    {
-        return Some("running");
-    }
-    if s.contains("waiting for") && s.contains("background") && s.contains("task") {
-        return Some("running");
-    }
-    if has_monitor && waiting && !has_shell && !has_agent {
-        return Some("monitor");
-    }
-    if has_shell && waiting {
-        return Some("running");
-    }
-    None
-}
-
-fn facets_for_bg_wait_toast(summary: &str) -> Facets {
-    match classify_bg_wait_toast(summary) {
-        Some("monitor") => monitor_wait(summary.into(), "monitor"),
-        _ => running_bg(summary.into(), "background"),
-    }
 }
 
 #[cfg(test)]

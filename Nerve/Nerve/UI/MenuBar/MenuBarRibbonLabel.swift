@@ -1,4 +1,5 @@
 import AppKit
+import NerveRibbonUI
 import SwiftUI
 
 // MARK: - Menu-bar ribbon ambient clock
@@ -184,7 +185,10 @@ struct MenuBarRibbonLabel: View {
             if index < segments.count - 1 {
                 let next = segments[index + 1]
                 let nextColor = animatedColor(for: next.status, motion: motion, time: time)
-                let blend = min(0.045, min(segment.weight, next.weight) * 0.28)
+                let blend = min(
+                    NerveRibbonRenderer.maxBlend,
+                    min(segment.weight, next.weight) * NerveRibbonRenderer.neighborBlend
+                )
                 stops.append(.init(color: color, location: max(cursor, end - blend)))
                 stops.append(.init(color: nextColor, location: min(1, end + blend)))
             } else {
@@ -198,7 +202,7 @@ struct MenuBarRibbonLabel: View {
     /// Progress 0…1 of the shimmer cycle, or nil when shimmer is off.
     private func shimmerOverlay(motion: RibbonMotionStyle, time: TimeInterval) -> Double? {
         guard motion == .shimmer || motion == .full else { return nil }
-        let period: TimeInterval = 1.8
+        let period = NerveRibbonRenderer.shimmerPeriod
         return (time.truncatingRemainder(dividingBy: period)) / period
     }
 

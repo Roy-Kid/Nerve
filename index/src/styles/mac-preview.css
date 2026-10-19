@@ -235,15 +235,15 @@
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: #ff675f;
+      background: var(--color-traffic-red);
     }
 
     .desktop-window-bar i:nth-child(2) {
-      background: #ffbd45;
+      background: var(--color-traffic-amber);
     }
 
     .desktop-window-bar i:nth-child(3) {
-      background: #51ce64;
+      background: var(--color-traffic-green);
     }
 
     .desktop-code-line {
@@ -735,15 +735,15 @@
     }
 
     .tmux-preview-dot--red {
-      background: #ff5f57;
+      background: var(--color-traffic-red);
     }
 
     .tmux-preview-dot--amber {
-      background: #febc2e;
+      background: var(--color-traffic-amber);
     }
 
     .tmux-preview-dot--green {
-      background: #28c840;
+      background: var(--color-traffic-green);
     }
 
     .tmux-preview-filter.is-active {

@@ -22,6 +22,7 @@ pub(super) async fn health(State(state): State<HubState>) -> (StatusCode, Json<V
         Json(json!({
             "ok": true,
             "service": "nerve",
+            "protocolVersion": 2,
             "version": SERVICE_VERSION,
             "watchers": lease.watchers,
             "notify": lease.to_json(),
@@ -90,4 +91,90 @@ pub(super) async fn put_notify(
     tracing::info!(policy = body.policy, "notify policy");
     state.roster().set_policy(policy);
     (StatusCode::OK, Json(state.roster().lease().to_json()))
+}
+
+pub(super) async fn frame(State(state): State<HubState>) -> Json<Value> {
+    let raw = crate::sse::Frame::connect(&state.store(), state.roster().lease()).render();
+    Json(serde_json::from_str(&raw).expect("hub frame is valid JSON"))
+}
+
+pub(super) async fn machines(State(state): State<HubState>) -> Json<Value> {
+    Json(state.machines.list())
+}
+pub(super) async fn configure_machine(
+    State(state): State<HubState>,
+    Json(config): Json<crate::federation::MachineConfig>,
+) -> (StatusCode, Json<Value>) {
+    match state.machines.configure(config) {
+        Ok(()) => (StatusCode::OK, Json(state.machines.list())),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({"error":error}))),
+    }
+}
+pub(super) async fn connect_machine(
+    State(state): State<HubState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> (StatusCode, Json<Value>) {
+    match state.machines.connect(&id) {
+        Ok(()) => (StatusCode::ACCEPTED, Json(json!({"ok":true}))),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({"error":error}))),
+    }
+}
+pub(super) async fn disconnect_machine(
+    State(state): State<HubState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Json<Value> {
+    state.machines.disconnect(&id);
+    Json(json!({"ok":true}))
+}
+
+pub(super) async fn configure_client(
+    State(state): State<HubState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(preferences): Json<crate::lifecycle::roster::ClientPreferences>,
+) -> Json<Value> {
+    state.roster().configure_client(id, preferences);
+    Json(json!({"ok":true}))
+}
+pub(super) async fn notification_result(Json(result): Json<Value>) -> Json<Value> {
+    tracing::info!(notification_id = ?result["id"], delivered = ?result["delivered"], "notification execution result");
+    Json(json!({"ok":true}))
+}
+
+pub(super) async fn discover_machines(State(state): State<HubState>) -> (StatusCode, Json<Value>) {
+    match state.machines.discover() {
+        Ok(()) => (StatusCode::OK, Json(state.machines.list())),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({"error":error}))),
+    }
+}
+
+#[derive(Deserialize)]
+pub(super) struct RemoteFocus {
+    host: String,
+    pid: u32,
+}
+pub(super) async fn remote_focus(
+    State(state): State<HubState>,
+    Json(request): Json<RemoteFocus>,
+) -> (StatusCode, Json<Value>) {
+    let jobs = state.store().jobs_json();
+    let authorized = jobs.as_array().is_some_and(|rows| {
+        rows.iter().any(|job| {
+            job["extensions"]["sshHost"].as_str() == Some(&request.host)
+                && job["extensions"]["pid"].as_u64() == Some(u64::from(request.pid))
+        })
+    });
+    if !authorized {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error":"remote job not found"})),
+        );
+    }
+    let result = tokio::task::spawn_blocking(move || {
+        crate::remote_focus::select_job(&request.host, request.pid)
+    })
+    .await;
+    (
+        StatusCode::OK,
+        Json(json!({"result":format!("{result:?}")})),
+    )
 }

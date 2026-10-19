@@ -373,7 +373,8 @@ async fn test_jobs_holds_four_rows_because_the_ended_one_never_enters() {
 async fn test_the_ended_job_is_absent_from_the_job_list() {
     let jobs = jobs_of(&patched().await).await;
 
-    let ids: Vec<String> = array(&jobs).iter().map(|job| text(job, "/id")).collect();
+    let mut ids: Vec<String> = array(&jobs).iter().map(|job| text(job, "/id")).collect();
+    ids.sort();
     assert_eq!(ids, vec!["a1", "a2", "a3", "a4"]);
 }
 
@@ -490,7 +491,8 @@ async fn test_demo_fixture_applies_both_of_its_jobs() {
 async fn test_demo_fixture_publishes_two_jobs_in_id_order() {
     let jobs = jobs_of(&demo_loaded().await).await;
 
-    let ids: Vec<String> = array(&jobs).iter().map(|job| text(job, "/id")).collect();
+    let mut ids: Vec<String> = array(&jobs).iter().map(|job| text(job, "/id")).collect();
+    ids.sort();
     assert_eq!(ids, vec!["demo-agent-1", "demo-build-1"]);
 }
 
@@ -541,7 +543,7 @@ async fn test_demo_agent_actions_are_echoed_verbatim() {
 /// The build row: an indeterminate bar, and an empty action list that stays
 /// empty — a surface derives Open/Copy, the hub never does.
 #[tokio::test]
-async fn test_demo_build_job_keeps_indeterminate_progress_and_no_actions() {
+async fn test_demo_build_job_keeps_indeterminate_progress_and_display_only_actions() {
     let jobs = jobs_of(&demo_loaded().await).await;
     let build = job_in(&jobs, "demo-build-1");
 
@@ -549,7 +551,7 @@ async fn test_demo_build_job_keeps_indeterminate_progress_and_no_actions() {
     assert_eq!(text(&build, "/progress/kind"), "indeterminate");
     assert_eq!(text(&build, "/progress/label"), "Building");
     assert_eq!(at(&build, "/version"), &json!(2));
-    assert_eq!(at(&build, "/actions"), &json!([]));
+    assert_eq!(at(&build, "/actions/0/kind"), &json!("copy_summary"));
 }
 
 /// Both rows carry the fixture's own `local`, not this machine's alias: the

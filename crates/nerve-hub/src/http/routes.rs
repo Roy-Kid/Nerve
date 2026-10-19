@@ -31,6 +31,7 @@ pub struct HubState {
     slots: Arc<Mutex<SlotMap>>,
     changes: ChangeSignal,
     roster: SurfaceRoster,
+    pub(super) machines: crate::federation::Machines,
 }
 
 impl HubState {
@@ -53,12 +54,27 @@ impl HubState {
         changes: ChangeSignal,
         roster: SurfaceRoster,
     ) -> Self {
+        let machines = crate::federation::Machines::new(store.clone(), changes.clone());
+        Self::from_shared_with_machines(store, changes, roster, machines)
+    }
+    pub fn from_shared_with_machines(
+        store: Arc<Mutex<JobStore>>,
+        changes: ChangeSignal,
+        roster: SurfaceRoster,
+        machines: crate::federation::Machines,
+    ) -> Self {
         Self {
             store,
-            slots: Arc::new(Mutex::new(SlotMap::new())),
             changes,
             roster,
+            machines,
+            slots: Arc::new(Mutex::new(SlotMap::new())),
         }
+    }
+
+    pub fn with_slots(mut self, slots: Arc<Mutex<SlotMap>>) -> Self {
+        self.slots = slots;
+        self
     }
 
     pub(super) fn roster(&self) -> &SurfaceRoster {
@@ -98,6 +114,23 @@ pub fn router(state: HubState) -> Router {
         // the subject → job rename.
         .route("/health", get(admin::health))
         .route("/v1/jobs", get(admin::jobs))
+        .route("/v1/frame", get(admin::frame))
+        .route("/v1/focus/remote", post(admin::remote_focus))
+        .route(
+            "/v1/clients/{id}",
+            axum::routing::put(admin::configure_client),
+        )
+        .route("/v1/notifications/result", post(admin::notification_result))
+        .route(
+            "/v1/machines",
+            get(admin::machines).put(admin::configure_machine),
+        )
+        .route("/v1/machines/discover", post(admin::discover_machines))
+        .route("/v1/machines/{id}/connect", post(admin::connect_machine))
+        .route(
+            "/v1/machines/{id}/disconnect",
+            post(admin::disconnect_machine),
+        )
         .route("/v1/subjects", get(admin::jobs))
         .route("/v1/snapshot", post(ingest::snapshot))
         .route("/v1/events", post(ingest::events))

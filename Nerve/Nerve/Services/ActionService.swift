@@ -69,7 +69,7 @@ enum ActionService {
     static func focusActionTitle(for subject: Job) -> String {
         if let alias = RemoteMachine.foreignAlias(of: subject.alias) {
             if ideDeepLink(subject) != nil { return "Open on \(alias)" }
-            return remoteSSHHost(for: alias) != nil ? "Connect to \(alias)" : "Copy location"
+            return remoteSSHHost(for: subject) != nil ? "Connect to \(alias)" : "Copy location"
         }
         if let url = subject.location?.openURL, !url.isEmpty {
             return url.hasPrefix("file:") || url.hasPrefix("/") ? "Open workspace" : "Open agent"
@@ -193,7 +193,7 @@ enum ActionService {
         if let url = ideDeepLink(subject), NSWorkspace.shared.open(url) {
             return .succeeded("Opened")
         }
-        if let host = remoteSSHHost(for: alias) {
+        if let host = remoteSSHHost(for: subject) {
             guard let url = URL(string: "ssh://\(host)") else {
                 return .failed("Could not address ssh host \(host)")
             }
@@ -219,11 +219,9 @@ enum ActionService {
 
     /// ssh `Host` that reaches `alias`, from the user's own config — the same
     /// file Settings sources its Machines list from (CLAUDE.md invariant 5).
-    private static func remoteSSHHost(for alias: String) -> String? {
-        let hosts = SSHConfigWriter.loadLocalHosts().map {
-            (alias: $0.alias, hostName: $0.hostName)
-        }
-        return RemoteMachine.bestHost(for: alias, among: hosts)
+    private static func remoteSSHHost(for subject: Job) -> String? {
+        guard case .string(let host) = subject.extensions["sshHost"] else { return nil }
+        return host
     }
 
     /// Last resort: hand the human the breadcrumb so they can get there

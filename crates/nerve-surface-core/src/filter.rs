@@ -37,7 +37,14 @@ impl StatusFilter {
     }
 
     pub fn matches(self, job: &JobView) -> bool {
-        self.matches_class(StatusClass::of(job), is_background(job))
+        self.classified(job).is_some()
+    }
+
+    /// The job's class when this filter keeps it, derived once.
+    pub fn classified(self, job: &JobView) -> Option<StatusClass> {
+        let class = StatusClass::of(job);
+        self.matches_class(class, is_background(job))
+            .then_some(class)
     }
 
     pub fn count(self, jobs: &[JobView]) -> usize {
@@ -77,10 +84,5 @@ impl StatusFilter {
 
 /// Background-style work: monitor phase or long-running current summary.
 fn is_background(job: &JobView) -> bool {
-    if let Some(current) = &job.current
-        && current.kind.eq_ignore_ascii_case("monitor")
-    {
-        return true;
-    }
-    false
+    job.extensions.hub.status == "monitor"
 }

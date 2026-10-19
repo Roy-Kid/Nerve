@@ -279,6 +279,7 @@ async fn test_health_returns_the_service_literal() {
         json!({
             "ok": true,
             "service": "nerve",
+            "protocolVersion": 2,
             "version": "0.1.0",
             "watchers": 0,
             "notify": {

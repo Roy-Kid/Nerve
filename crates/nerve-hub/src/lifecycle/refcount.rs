@@ -1,11 +1,4 @@
-//! How many surfaces are watching, and since when.
-//!
-//! A surface proves it is present by holding an SSE subscription (spec D3);
-//! producer traffic proves nothing, because a hook never reads a frame. This
-//! module counts references and publishes every change — deciding what a count
-//! of zero means is [`super::grace`]'s job, so the count itself stays free of
-//! policy and needs no timer to be tested.
-
+//! Subscription presence count for observation and routing only.
 use std::sync::Arc;
 
 use tokio::sync::watch;
@@ -53,7 +46,7 @@ impl Presence {
         }
     }
 
-    /// Follow the count — how the grace timer learns about 0→1 and 1→0.
+    /// Follow subscription-count changes for observation.
     pub fn watch(&self) -> watch::Receiver<Watchers> {
         self.watchers.subscribe()
     }

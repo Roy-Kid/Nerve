@@ -57,8 +57,11 @@ describe('site config', () => {
       'inactive',
     ]);
     expect(statusMeta.running.label).toBe('Running');
-    expect(statusMeta.problem.color).toBe('#ff3b30');
-    expect(statusMeta.attention.color).toBe('#ff9f0a');
+    expect(statusMeta.attention.label).toBe('Needs you');
+    expect(statusMeta.success.label).toBe('Completed');
+    expect(statusMeta.inactive.label).toBe('Ready / idle');
+    expect(statusMeta.problem.color).toBe('var(--color-status-problem)');
+    expect(statusMeta.attention.color).toBe('var(--color-status-attention)');
   });
 
   it('lists product truths and sources', () => {

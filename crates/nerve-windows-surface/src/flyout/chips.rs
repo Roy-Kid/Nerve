@@ -10,24 +10,36 @@ use crate::tray::icon::Theme;
 /// Running first, then what needs a person. The second only when it is not
 /// zero: a permanent "0 needs you" is a thing people learn to stop reading.
 pub fn counts(ui: &mut Ui, tally: &Tally, theme: Theme) {
-    let busy = tally.running + tally.monitor;
+    let busy = tally.running_count();
     ui.label(
         RichText::new(format!("{busy} running"))
             .color(color(palette::RUNNING))
             .small(),
     );
 
-    let needs = tally.problem + tally.attention + tally.waiting;
+    if tally.problem > 0 {
+        ui.add_space(8.0);
+        ui.label(
+            RichText::new(format!(
+                "{} {}",
+                tally.problem,
+                if tally.problem == 1 {
+                    "problem"
+                } else {
+                    "problems"
+                }
+            ))
+            .color(color(palette::PROBLEM))
+            .small(),
+        );
+    }
+
+    let needs = tally.needs_you();
     if needs > 0 {
         ui.add_space(8.0);
-        let hue = if tally.problem > 0 {
-            palette::PROBLEM
-        } else {
-            palette::ATTENTION
-        };
         ui.label(
             RichText::new(format!("{needs} needs you"))
-                .color(color(hue))
+                .color(color(palette::ATTENTION))
                 .small(),
         );
     }

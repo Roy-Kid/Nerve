@@ -6,7 +6,6 @@
 
 use nerve_surface_core::sort::compare_jobs;
 use nerve_surface_core::store::JobsSnapshot;
-use nerve_surface_core::tally::Tally;
 use time::OffsetDateTime;
 
 use super::bands::stack;
@@ -33,7 +32,7 @@ pub fn of(
     size: u32,
     now: OffsetDateTime,
 ) -> View {
-    let tally = Tally::of(&snapshot.jobs);
+    let tally = snapshot.summary.tally();
     let bands = stack(&tally);
 
     let offline = match (snapshot.offline, hub_installed) {
@@ -47,7 +46,10 @@ pub fn of(
 
     View {
         signature: signature::of(&bands, snapshot.offline, theme, size),
-        tooltip: tooltip::render(&tally, top, offline),
+        tooltip: snapshot
+            .error
+            .clone()
+            .unwrap_or_else(|| tooltip::render(&tally, top, offline)),
         icon: IconSpec {
             size,
             bands,

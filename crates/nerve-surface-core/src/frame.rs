@@ -219,6 +219,8 @@ pub struct JobContext {
 #[serde(rename_all = "camelCase")]
 pub struct JobExtensions {
     #[serde(default)]
+    pub hub: HubDisplay,
+    #[serde(default)]
     pub pid: Option<u32>,
     /// What the human last asked this agent, as the producer reported it and
     /// the hub kept it (`crates/nerve-hub/src/state/store.rs` STICKY_EXTENSIONS).
@@ -233,6 +235,18 @@ pub struct JobExtensions {
     /// UI slot key — a new session in the same slot supersedes this one.
     #[serde(default)]
     pub slot: Option<String>,
+    /// Producer role (`group`, `member`, `job`, …). Unknown keys stay ignored.
+    #[serde(default)]
+    pub role: Option<String>,
+    /// Group this member belongs to.
+    #[serde(default)]
+    pub group_id: Option<String>,
+    /// Legacy parent id. Surfaces treat it as [`Self::group_id`] when that is absent.
+    #[serde(default)]
+    pub parent_job_id: Option<String>,
+    /// `false` keeps the row off the ribbon.
+    #[serde(default)]
+    pub paint_ribbon: Option<bool>,
 }
 
 /// Where a surface should send the human back to.
@@ -339,10 +353,20 @@ impl JobView {
 pub struct Frame {
     #[serde(default)]
     pub jobs: Vec<JobView>,
+    #[serde(rename = "hubInstanceId")]
+    pub hub_instance_id: String,
+    pub revision: u64,
+    #[serde(default)]
+    pub machines: Vec<serde_json::Value>,
+    pub summary: HubSummary,
     #[serde(default)]
     pub departed: Vec<JobView>,
     #[serde(default)]
     pub notify: NotifyLease,
+    #[serde(default)]
+    pub notifications: Vec<HubNotification>,
+    #[serde(default, rename = "protocolVersion")]
+    pub protocol_version: u32,
 }
 
 impl Frame {
@@ -352,12 +376,35 @@ impl Frame {
     /// caller decides whether to keep the last segment or go offline, and
     /// silently painting zero jobs would be a lie either way.
     pub fn decode(raw: &str) -> Result<Self, FrameError> {
-        serde_json::from_str(raw).map_err(FrameError::new)
+        let value: serde_json::Value = serde_json::from_str(raw).map_err(FrameError::new)?;
+        if value.get("protocolVersion").and_then(|v| v.as_u64()) != Some(2) {
+            return Err(FrameError {
+                message: "Upgrade Nerve hub: protocol version 2 required".into(),
+            });
+        }
+        let frame: Self = serde_json::from_value(value).map_err(FrameError::new)?;
+        if frame.protocol_version != 2 {
+            return Err(FrameError {
+                message: "Upgrade Nerve hub: protocol version 2 required".into(),
+            });
+        }
+        Ok(frame)
     }
 
     /// Read `GET /v1/jobs` — a bare array, not an SSE envelope.
     pub fn decode_jobs_list(raw: &str) -> Result<Vec<JobView>, FrameError> {
-        serde_json::from_str(raw).map_err(FrameError::new)
+        let value: serde_json::Value = serde_json::from_str(raw).map_err(FrameError::new)?;
+        if value.as_array().is_some_and(|jobs| {
+            jobs.iter().any(|job| {
+                !job.get("display")
+                    .is_some_and(|display| display.is_object())
+            })
+        }) {
+            return Err(FrameError {
+                message: "Upgrade Nerve hub: authoritative task projection required".into(),
+            });
+        }
+        serde_json::from_value(value).map_err(FrameError::new)
     }
 }
 
@@ -382,3 +429,55 @@ impl fmt::Display for FrameError {
 }
 
 impl std::error::Error for FrameError {}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HubDisplay {
+    #[serde(default)]
+    pub machine_group: String,
+    #[serde(default)]
+    pub machine_label: String,
+    pub status: String,
+    pub status_rank: usize,
+    pub ask: bool,
+    pub busy: bool,
+    pub role: String,
+    pub group_id: Option<String>,
+    pub paints_ribbon: bool,
+    #[serde(default)]
+    pub order_key: String,
+    pub section: String,
+    pub status_label: String,
+    pub activity: String,
+    #[serde(default)]
+    pub order: usize,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HubNotification {
+    pub id: String,
+    pub target: String,
+    pub job_id: String,
+    pub title: String,
+    pub body: String,
+    pub level: String,
+    pub sound: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HubSummary {
+    pub total: usize,
+    pub counts: crate::tally::Tally,
+    pub ask: usize,
+    pub hard_ask: bool,
+    pub worst_status: String,
+}
+impl HubSummary {
+    pub fn tally(&self) -> crate::tally::Tally {
+        let mut tally = self.counts;
+        tally.ask = self.ask;
+        tally
+    }
+}

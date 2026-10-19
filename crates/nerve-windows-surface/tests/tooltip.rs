@@ -6,7 +6,7 @@ use nerve_windows_surface::tray::tooltip::{MAX_UTF16_UNITS, Offline, render};
 use serde_json::json;
 
 fn job(value: serde_json::Value) -> JobView {
-    serde_json::from_value(value).expect("job fixture")
+    nerve_surface_core::testkit::job(value)
 }
 
 fn tally(running: usize, attention: usize) -> Tally {

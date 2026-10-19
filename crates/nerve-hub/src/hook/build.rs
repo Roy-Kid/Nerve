@@ -31,6 +31,20 @@ pub fn build_job(
         extensions.insert("hookEvent".into(), json!(ev));
     }
     extensions.insert("sessionId".into(), json!(session));
+    if let (Some(host), Some(terminal)) = (
+        get_str(payload, &["terminalHost"]),
+        get_str(payload, &["terminalName"]),
+    ) && !host.is_empty()
+        && host.len() <= 255
+        && !host.chars().any(char::is_whitespace)
+        && terminal.starts_with("/dev/")
+        && terminal.len() <= 256
+    {
+        extensions.insert(
+            "terminal".into(),
+            json!({"host":host.to_lowercase(),"terminal":terminal}),
+        );
+    }
     if let Some(model) = get_text(payload, &["model"]) {
         extensions.insert("model".into(), json!(model));
     }
@@ -46,7 +60,7 @@ pub fn build_job(
             break;
         }
     }
-    let slot = get_text(payload, &["slotId", "slot"]).unwrap_or_else(|| slot_id(producer, payload));
+    let slot = resolved_slot(producer, payload);
     extensions.insert("slot".into(), json!(slot));
     let event = event_name(payload);
     if (event == "subagentstart" || event == "subagentstop")
@@ -160,7 +174,7 @@ fn location(payload: &Value, producer: Producer, cwd: &str, project: &str) -> Lo
 
 /// Display-only actions: Open/Focus first, then Copy, then Open logs.
 /// Never approve/submit — Nerve does not reverse-control (invariant 6).
-fn local_actions(location: &LocationInfo) -> Vec<JobAction> {
+pub(crate) fn local_actions(location: &LocationInfo) -> Vec<JobAction> {
     let has_url = location.open_url.as_deref().is_some_and(|u| !u.is_empty());
     let has_hint = location
         .focus_hint
@@ -204,8 +218,16 @@ fn local_actions(location: &LocationInfo) -> Vec<JobAction> {
     actions
 }
 
-/// Slot key: producer + workspace. HTTP hooks have no terminal env; Codex
-/// command can still distinguish windows via cwd + session file.
+/// Slot the hub indexes. An injected `slotId` wins; otherwise producer + workspace.
+///
+/// Hooks hash the terminal (`WT_SESSION`, `ConEmuPID`, …) into `slotId`. The
+/// cwd fallback is only for a producer that sent none, so two sessions in one
+/// workspace do not collapse onto each other.
+pub fn resolved_slot(producer: Producer, payload: &Value) -> String {
+    get_text(payload, &["slotId", "slot"]).unwrap_or_else(|| slot_id(producer, payload))
+}
+
+/// Slot key when the payload names no terminal: producer + workspace.
 pub fn slot_id(producer: Producer, payload: &Value) -> String {
     let cwd = cwd(payload);
     format!("{}:{cwd}", producer.key())
@@ -235,4 +257,21 @@ pub fn ended_supersede(
     job.extensions
         .insert("endReason".into(), json!("superseded"));
     job
+}
+
+#[cfg(test)]
+mod terminal_identity_tests {
+    use super::*;
+    #[test]
+    fn raw_terminal_identity_survives_hook_projection() {
+        let clock = crate::clock::SystemClock;
+        let payload = json!({"hook_event_name":"UserPromptSubmit","session_id":"s",
+            "terminalHost":"Studio","terminalName":"/dev/ttys001"});
+        let facets = super::super::map_event(&payload).unwrap();
+        let job = build_job(&payload, Producer::Claude, &clock, &facets, "s");
+        assert_eq!(
+            job.extensions["terminal"],
+            json!({"host":"studio","terminal":"/dev/ttys001"})
+        );
+    }
 }

@@ -1,0 +1,18 @@
+{
+  "id": "app.nerve.tether",
+  "name": "Nerve",
+  "publisher": "Roy-Kid",
+  "version": "0.1.0",
+  "api": 1,
+  "runtime": "web",
+  "entrypoint": "web/index.html",
+  "ageRating": "4+",
+  "link": "https://github.com/Roy-Kid/Nerve",
+  "permissions": ["network"],
+  "networkURLs": ["http://127.0.0.1:17890/v1/stream?surface=tether"],
+  "contributions": [
+    {"kind": "panel", "id": "panel/jobs"},
+    {"kind": "statusBar", "id": "status/jobs"},
+    {"kind": "tabIndicator", "id": "tabs/jobs"}
+  ]
+}

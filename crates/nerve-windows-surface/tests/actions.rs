@@ -9,7 +9,7 @@ use serde_json::json;
 const LOCAL: Option<&str> = Some("thinkpad");
 
 fn job(value: serde_json::Value) -> JobView {
-    serde_json::from_value(value).expect("job fixture")
+    nerve_surface_core::testkit::job(value)
 }
 
 #[test]

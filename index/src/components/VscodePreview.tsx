@@ -42,9 +42,9 @@ export function VscodePreview({ variant = 'default', className }: VscodePreviewP
         aria-hidden="true"
       >
         <span className="flex items-center gap-1.5">
-          <span className={cn('rounded-full bg-[#ff5f57]', hero ? 'size-2.5' : 'size-2')} />
-          <span className={cn('rounded-full bg-[#febc2e]', hero ? 'size-2.5' : 'size-2')} />
-          <span className={cn('rounded-full bg-[#28c840]', hero ? 'size-2.5' : 'size-2')} />
+          <span className={cn('rounded-full bg-traffic-red', hero ? 'size-2.5' : 'size-2')} />
+          <span className={cn('rounded-full bg-traffic-amber', hero ? 'size-2.5' : 'size-2')} />
+          <span className={cn('rounded-full bg-traffic-green', hero ? 'size-2.5' : 'size-2')} />
         </span>
         <span className="mx-auto rounded-md bg-[#4d4d4d] px-8 py-0.5 text-[#cccccc]/80">
           nerve

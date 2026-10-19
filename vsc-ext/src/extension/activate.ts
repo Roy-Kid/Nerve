@@ -30,15 +30,16 @@ export function activate(context: vscode.ExtensionContext): void {
     spawnEnabled: () =>
       vscode.workspace.getConfiguration("nerve").get("hub.spawn", true),
     log,
+    notificationsEnabled: () => vscode.workspace.getConfiguration("nerve").get("notifications.ask",true),
+    onNotification: event => askToast.present(event, store.snapshot().jobs.find(job=>job.id === event.jobId)),
   });
 
   const applyChrome = (): void => {
     const snapshot = store.snapshot();
-    askToast.evaluate(snapshot.jobs, snapshot.notify);
 
-    const badgeCount = snapshot.jobs.filter((job) => {
-      return statusOf(job) === "problem" || isAskElevated(job);
-    }).length;
+
+    const counts = (snapshot.summary.counts ?? {}) as Record<string,number>;
+    const badgeCount = (counts.problem ?? 0) + Number(snapshot.summary.ask ?? 0);
     const badgeOn = vscode.workspace
       .getConfiguration("nerve")
       .get("badge.enabled", true);
@@ -60,6 +61,7 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   store.onChange(applyChrome);
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => { if (event.affectsConfiguration("nerve.notifications")) void client.configureNotifications(); }));
 
   const jobFromArg = (arg: unknown): Job | undefined => {
     if (arg instanceof JobItem) return arg.job;

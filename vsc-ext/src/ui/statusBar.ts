@@ -1,10 +1,9 @@
 import * as vscode from "vscode";
-import type { Job } from "../model/job";
+import type { Job, Status } from "../model/job";
 import {
   isAskElevated,
   statusOf,
   statusTitle,
-  worstStatus,
 } from "../model/status";
 import type { JobStore } from "../store/jobStore";
 
@@ -37,7 +36,7 @@ export class NerveStatusBar {
     const snapshot = this.store.snapshot();
     if (!snapshot.connected) {
       this.item.text = "Nerve · offline";
-      this.item.tooltip = "nerve-hub is not reachable on 127.0.0.1:17890";
+      this.item.tooltip = snapshot.error ?? "nerve-hub is not reachable on 127.0.0.1:17890";
       this.item.backgroundColor = undefined;
       this.item.accessibilityInformation = {
         label: "Nerve offline",
@@ -58,33 +57,30 @@ export class NerveStatusBar {
       return;
     }
 
-    const asks = snapshot.jobs.filter(isAskElevated);
-    const problems = snapshot.jobs.filter((job) => statusOf(job) === "problem");
-    const statuses = snapshot.jobs.map(statusOf);
-    const worst = worstStatus(statuses);
-    const hardAsk = asks.some(
-      (job) =>
-        job.attention.level === "required" || job.attention.level === "urgent",
-    );
+    const askCount = Number(snapshot.summary.ask ?? 0);
+    const counts = (snapshot.summary.counts ?? {}) as Record<string,number>;
+    const problemCount = counts.problem ?? 0;
+    const worst = (snapshot.summary.worstStatus ?? "inactive") as Status;
+    const hardAsk = snapshot.summary.hardAsk === true;
 
-    if (asks.length > 0) {
+    if (askCount > 0) {
       this.item.text =
-        asks.length === 1 ? "Nerve · your turn" : `Nerve · ${asks.length} waiting`;
+        askCount === 1 ? "Nerve · your turn" : `Nerve · ${askCount} waiting`;
     } else {
       this.item.text = `Nerve · ${statusTitle(worst).toLowerCase()}`;
     }
 
-    this.item.tooltip = tooltip(snapshot.jobs, worst, asks.length);
+    this.item.tooltip = tooltip(snapshot.jobs, worst, askCount);
     this.item.accessibilityInformation = {
       label:
-        asks.length > 0
-          ? `Nerve, ${asks.length} ready for you`
+        askCount > 0
+          ? `Nerve, ${askCount} ready for you`
           : `Nerve, ${statusTitle(worst)}`,
       role: "button",
     };
 
     // Soft chrome: yellow only for hard Ask or real problems — not every suggested turn.
-    if (problems.length > 0) {
+    if (problemCount > 0) {
       this.item.backgroundColor = new vscode.ThemeColor(
         "statusBarItem.errorBackground",
       );

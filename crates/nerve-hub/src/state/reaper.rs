@@ -70,14 +70,11 @@ impl Reaper {
             .collect()
     }
 
-    fn victim(&self, job: &Job, now: WireTime, machine_alias: &str) -> Option<Victim> {
+    fn victim(&self, job: &Job, now: WireTime, _machine_alias: &str) -> Option<Victim> {
         if job.is_ended() || !job.is_conversation_job() {
             return None;
         }
-        // Remote pids are meaningless here — they belong to another machine.
-        if job.alias != machine_alias {
-            return None;
-        }
+        // Only local-authority jobs enter this store; remote snapshots are separate.
         if now.seconds_since(job.created_at) < self.min_age_secs {
             return None;
         }

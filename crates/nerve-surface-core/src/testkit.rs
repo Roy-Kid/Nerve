@@ -175,12 +175,27 @@ pub const DEMO_SNAPSHOT: &str = include_str!("../../../fixtures/demo_snapshot.js
 
 /// Decode a frame, failing the test with the raw text on any error.
 pub fn frame(raw: &str) -> Frame {
-    Frame::decode(raw).unwrap_or_else(|err| panic!("frame must decode ({err}): {raw}"))
+    let mut value: Value = serde_json::from_str(raw).expect("fixture JSON");
+    value["protocolVersion"] = serde_json::json!(2);
+    value["hubInstanceId"] = serde_json::json!("fixture");
+    value["revision"] = serde_json::json!(1);
+    for key in ["jobs", "departed"] {
+        if value[key].is_null() {
+            value[key] = serde_json::json!([]);
+        }
+        if let Some(rows) = value[key].as_array_mut() {
+            for row in rows {
+                *row = nerve_hub::projection::project_json(row.clone());
+            }
+        }
+    }
+    value["summary"] = nerve_hub::projection::summarize(&value["jobs"]);
+    Frame::decode(&value.to_string()).expect("projected hub fixture")
 }
 
 /// Build one `JobView` from a JSON literal.
 pub fn job(value: Value) -> JobView {
-    serde_json::from_value(value.clone())
+    serde_json::from_value(nerve_hub::projection::project_json(value.clone()))
         .unwrap_or_else(|err| panic!("job must decode ({err}): {value}"))
 }
 
@@ -200,4 +215,19 @@ pub fn demo_jobs() -> Vec<JobView> {
         .cloned()
         .map(job)
         .collect()
+}
+
+pub fn jobs(value: Value) -> Vec<JobView> {
+    value
+        .as_array()
+        .expect("fixture job array")
+        .iter()
+        .cloned()
+        .map(job)
+        .collect()
+}
+
+pub fn summary(jobs: &[JobView]) -> crate::frame::HubSummary {
+    let values=serde_json::json!(jobs.iter().map(|j|serde_json::json!({"id":j.id,"display":{"status":j.extensions.hub.status,"ask":j.extensions.hub.ask,"statusRank":j.extensions.hub.status_rank},"attention":{"level":j.attention.level.wire()}})).collect::<Vec<_>>());
+    serde_json::from_value(nerve_hub::projection::summarize(&values)).unwrap()
 }

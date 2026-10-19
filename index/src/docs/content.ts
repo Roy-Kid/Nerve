@@ -1,3 +1,4 @@
+import hubFixture from '../../../fixtures/hub-frame.json';
 /** Structured docs content for website subpages (source of truth; repo READMEs point here). */
 
 import type { Locale } from '../i18n/messages';
@@ -33,11 +34,6 @@ export const docNav: DocNavItem[] = [
     slug: 'vscode',
     title: 'VS Code extension',
     summary: 'Status bar and Activity Bar job list inside the editor.',
-  },
-  {
-    slug: 'tether',
-    title: 'Tether plugin',
-    summary: 'Jobs inside Tether, sharing one hub with the menu bar.',
   },
   {
     slug: 'windows',
@@ -86,11 +82,6 @@ const zhDocNav: DocNavItem[] = [
     slug: 'vscode',
     title: 'VS Code 扩展',
     summary: '编辑器里的状态栏和 Activity Bar 任务列表。',
-  },
-  {
-    slug: 'tether',
-    title: 'Tether 插件',
-    summary: '在 Tether 里看任务，和菜单栏共用一个 hub。',
   },
   {
     slug: 'windows',
@@ -175,6 +166,19 @@ export const docPages: DocPage[] = [
         type: 'p',
         text: 'On macOS a continuous ribbon appears in the menu bar — no Dock icon, no floating window. On Windows the same state folds into a notification-area icon, and the ribbon itself moves into the flyout behind it.',
       },
+      { type: 'h2', text: 'Tether on macOS' },
+      {
+        type: 'p',
+        text: 'Tether can dynamically install Nerve as a web plugin: in Settings → Extensions → Install, select surfaces/tether from this checkout. It adds a jobs panel and a persistent bottom ribbon. Allow its network permission to read the local hub stream. Keep nerve-hub running separately; installing the web package does not install or launch native code. Disable or uninstall it from the same Extensions pane.',
+      },
+      {
+        type: 'p',
+        text: 'The panel uses the same circle in different colors for every status. Hover a circle for its meaning; click one to filter, and click it again to show all jobs. Use the search icon or ⌘/Ctrl F to search, arrow keys to browse, and click a task or press Enter to expand its activity and timeline. A lost connection keeps the last snapshot dimmed; hover the connection circle for recovery instructions and use the retry icon to reconnect.',
+      },
+      {
+        type: 'p',
+        text: 'With a Tether build supporting the tabIndicator plugin contribution, task state also appears as a colored circle before the matching tab name. Matching uses the actual machine hostname and controlling TTY, so renaming a tab has no effect. Update the hub, hooks and installed web package together; the next hook event supplies the identity. The hub selects one state per terminal. A split tab shows its focused terminal; loss of the hub connection clears the marks.',
+      },
       { type: 'h2', text: 'Ribbon gestures' },
       {
         type: 'table',
@@ -254,14 +258,14 @@ codex plugin add nerve@nerve`,
         type: 'table',
         headers: ['Host', 'Official type', 'What runs'],
         rows: [
-          ['Claude Code', 'command (exec form)', 'Official: `"command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/nerve.js"]`. Native Node, no shell.'],
-          ['Grok', 'command', '`node grok-post.js` POSTs the event JSON to http://127.0.0.1:17890/v1/hook. Grok `type: http` refuses loopback (SSRF); connection failure is fail-open.'],
-          ['Codex', 'command', 'Official docs: python3 ${PLUGIN_ROOT}/hooks/…. Codex has no HTTP hook type. Script: hooks/nerve.py, async.'],
+          ['Claude Code', 'command (exec form)', 'Official: `"command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/nerve.js"]`. Native Node, no shell. `async: true` except SessionEnd.'],
+          ['Grok', 'command', '`node grok-post.js` writes the event JSON to http://127.0.0.1:17890/v1/hook and returns without reading the response. Grok `type: http` refuses loopback (SSRF). A closed port does not stall the turn.'],
+          ['Codex', 'command', 'Official docs: python3 ${PLUGIN_ROOT}/hooks/…. Codex has no HTTP hook type. Script: hooks/nerve.py, async except SessionEnd. The script waits for bounded acknowledgement.'],
         ],
       },
       {
         type: 'p',
-        text: 'Claude maps in Node and POSTs /v1/snapshot. Codex maps in Python and POSTs /v1/snapshot. Grok’s command hook POSTs the raw event to /v1/hook and the hub maps that body. Every path fail-opens if the hub is down. Every official lifecycle event is registered as a slot (Claude omits WorktreeCreate/Remove: a no-op there fails worktree creation). Events without a facet map fire and no-op rather than invent status.',
+        text: 'Codex, Claude and Grok hooks forward raw events to their own machine’s /v1/hook?producer=… endpoint. Scripts only collect session, host PID and stable terminal slot; the hub handles all mapping, lifecycle and deduplication. Hooks have bounded network time and always exit 0. Each event registration is a host lifecycle entry point, not a separate task manager.',
       },
       { type: 'h2', text: 'What hooks report' },
       {
@@ -340,7 +344,7 @@ cargo test -p nerve-hub hook`,
           'Open Settings → Machines',
           'This Mac is always present (alias = hostname short name / Bonjour LocalHostName)',
           'Remote list is loaded from your ~/.ssh/config — use the refresh control to re-read Hosts',
-          'Enable a Host, then Connect. Nerve only injects RemoteForward; connection details stay in your SSH config',
+          'Every machine runs its own resident singleton hub. The local hub uses SSH LocalForward to reach the remote hub, calls remote nerve-hub ensure, and subscribes to its local-only task stream. It never installs remote binaries. Disconnect retains the snapshot and marks the origin offline; reconnect replaces it. SSH configuration and connections belong to the hub.',
         ],
       },
       {
@@ -468,7 +472,7 @@ run-shell ~/.tmux/plugins/nerve/surfaces/tmux/nerve.tmux`,
       { type: 'h2', text: 'Remote hosts get this for free' },
       {
         type: 'p',
-        text: 'If a machine already has a RemoteForward tunnel back to your Mac (see Machines & remotes), then 127.0.0.1:17890 on that remote already is your Mac’s hub. Install the helper there, add the run-shell line, and the remote’s tmux shows your jobs. The helper has no concept of “remote” to configure — no host, no port, no env var. It is the same design that lets agent hooks on a remote POST to loopback and mean this Mac.',
+        text: 'Every machine runs its own resident singleton hub. The local hub uses SSH LocalForward to reach the remote hub, calls remote nerve-hub ensure, and subscribes to its local-only task stream. It never installs remote binaries. Disconnect retains the snapshot and marks the origin offline; reconnect replaces it. SSH configuration and connections belong to the hub.',
       },
       {
         type: 'p',
@@ -565,7 +569,7 @@ npm run watch`,
       {
         type: 'callout',
         title: 'Remote windows get this for free',
-        text: 'A VS Code Remote-SSH window is another extension host talking to 127.0.0.1:17890 on that machine. If the machine already has a RemoteForward tunnel back to your Mac, those jobs are the same jobs. Nothing to configure in the extension.',
+        text: 'Every machine runs its own resident singleton hub. The local hub uses SSH LocalForward to reach the remote hub, calls remote nerve-hub ensure, and subscribes to its local-only task stream. It never installs remote binaries. Disconnect retains the snapshot and marks the origin offline; reconnect replaces it. SSH configuration and connections belong to the hub.',
       },
       { type: 'h2', text: 'When the view is not what you expect' },
       {
@@ -581,42 +585,6 @@ npm run watch`,
       {
         type: 'p',
         text: './scripts/nerve.sh --verify-vscode runs the unit suite (status golden, frame parse, focus ranking, hub launch). It does not boot a VS Code UI.',
-      },
-    ],
-  },
-  {
-    slug: 'tether',
-    title: 'Tether plugin',
-    lede: 'A compile-time Tether extension that paints the same nerve-hub stream as the macOS menu bar. One hub per machine; notifications go to one elected surface.',
-    blocks: [
-      {
-        type: 'callout',
-        title: 'One hub',
-        text: 'Tether probes http://127.0.0.1:17890/v1/health before spawning. If Nerve.app (or tmux, or VS Code) already holds the port, this plugin attaches to that hub. A second nerve-hub that loses the bind exits as already-running. Producers still never spawn the hub.',
-      },
-      { type: 'h2', text: 'Install' },
-      {
-        type: 'p',
-        text: 'The plugin lives in this repo at surfaces/tether and is registered in the Tether app composition root. Enable it in Tether → Settings → Extensions. Connect to a host, then click Nerve in the toolbar.',
-      },
-      {
-        type: 'code',
-        lang: 'bash',
-        code: `swift test --package-path surfaces/tether`,
-      },
-      { type: 'h2', text: 'What you see' },
-      {
-        type: 'ul',
-        items: [
-          'One GET /v1/stream?surface=tether for the life of the enabled plugin — that connection is the refcount, not each workspace tab',
-          'A job list (preferring the host you launched from when aliases match)',
-          'Ask banners only when the hub’s notify lease names tether as owner',
-        ],
-      },
-      { type: 'h2', text: 'Notifications' },
-      {
-        type: 'p',
-        text: 'The hub counts open streams and, with policy single (default), elects one owner: macos, then tether, then windows, then vscode, then tmux. PUT /v1/notify { "policy": "all" } restores the old “every surface fires” behaviour. Settings in Nerve.app and in the Tether extension both write that route.',
       },
     ],
   },
@@ -737,7 +705,7 @@ cargo install nerve-hub nerve-windows-surface`,
         items: [
           'The port is fixed and not configurable: binding 17890 is itself the single-instance lock, so there is no port field in Settings (only the endpoint, shown for copying) and no NERVE_* env to set.',
           'The app auto-spawns the nerve-hub binary bundled inside Nerve.app when nothing answers on the port, and attaches to the running hub otherwise.',
-          'Surfaces are reference-counted. When the last SSE subscriber disconnects, the hub waits out a grace period (30s by default) and exits on its own. Producer POSTs do not keep it alive.',
+          'The hub stays resident after all surfaces disconnect. nerve-hub ensure owns singleton discovery, detached startup and readiness. Subscription counts only describe delivery routes; tasks remain in memory until the hub is restarted.',
           'Every surface — menu bar, tmux plugin, plain curl — reads the same frames, so status never depends on which one you have open.',
         ],
       },
@@ -762,10 +730,6 @@ cargo install nerve-hub nerve-windows-surface`,
       {
         type: 'p',
         text: 'Rows also carry a status word next to the colour, refined by attention.reason: “Approval needed” (approval / permission / auth), “Input needed” (input / elicitation), “Review needed” (review), “Decision needed” (decision), “Needs attention” otherwise. An open session whose turn just finished reads “Turn complete”; an ended one reads “Completed”. attention.title overrides the row text whenever attention.level ≥ suggested.',
-      },
-      {
-        type: 'p',
-        text: 'Tether paints the same words and the same six hexes (Problem #FF3B30, Attention #FF9F0A, Running #0A84FF, Monitor #BF5AF2, Success #30D158, Inactive/Waiting #8E8E93) as the macOS menu-bar app.',
       },
       { type: 'h2', text: 'Main-session lifecycle' },
       {
@@ -839,7 +803,7 @@ cargo install nerve-hub nerve-windows-surface`,
         type: 'ul',
         items: [
           'nerve-hub: stderr plus a daily file at ~/Library/Logs/Nerve/nerve-hub.log.YYYY-MM-DD (Linux: ~/.local/state/nerve/logs/, Windows: %LOCALAPPDATA%\\Nerve\\Logs\\). Default filter is info. `nerve-hub serve --verbose` or `RUST_LOG=nerve_hub=debug` for every hook event and surface attach/detach.',
-          'macOS app and Tether: Console.app, subsystems app.nerve.Nerve and app.nerve.tether, category hub.',
+          'macOS app: Console.app, subsystem app.nerve.Nerve, category hub.',
           'tmux / Windows tray: same log directory, nerve-tmux.log / nerve-windows.log. RUST_LOG=nerve_surface_core=debug for frame-by-frame traces.',
           'VS Code: Output panel → Nerve (log channel).',
         ],
@@ -898,7 +862,7 @@ cargo install nerve-hub nerve-windows-surface`,
           'kind — job shape (session, build, test, …), not “agent”',
           'producer — who reported the job',
           'name — typically project basename (cwd); status lives in current / attention',
-          'attention.level — none < informational < suggested < required < urgent. Surfaces derive display colour; they never invent status from free text.',
+          'attention.level — none < informational < suggested < required < urgent. The hub derives display status; surfaces read display.status and never infer from prose.',
           'attention.reason — Ask (input, approval, auth, permission, decision, elicitation, review) may interrupt; Wait (resource, queue, failure, …) paints Attention but does not banner by default.',
         ],
       },
@@ -910,23 +874,23 @@ cargo install nerve-hub nerve-windows-surface`,
       {
         type: 'code',
         lang: 'json',
-        code: `{ "jobs": [ … ], "departed": [ … ], "notify": { "policy": "single", "owner": "macos", "surfaces": ["macos"], "watchers": 1 } }`,
+        code: JSON.stringify(hubFixture, null, 2),
       },
       {
         type: 'ul',
         items: [
           'jobs — the authoritative full set. The first frame arrives on connect.',
           'departed — terminal states of jobs evicted since the previous frame (lifecycle ended, endedAt, outcome). A hint so surfaces do not lose the ending; jobs stays the authority.',
-          'notify — interrupt lease. policy is single (one elected owner) or all. owner is the surface label allowed to fire when policy is single. surfaces / watchers are the live connections. An older hub omits the key; surfaces then fire independently.',
+          'notifications — commands targeted to one client instance and connection, each with a unique notification ID. Only the hub detects Ask/escalation, applies the 120-second window and selects capable enabled clients under single/all. Surfaces execute and report results. Connect and polling frames never replay historical notifications. An old protocol requires an upgrade.',
           'Reconnecting is resyncing — drop the connection and the next first frame is the full set again.',
           'Every job in a frame has the same shape as one from /v1/jobs, including the timeline the hub keeps for it: up to 40 entries, heartbeats excluded.',
-          '?surface=<label> names the connection for the notify lease. It does not filter jobs. GET/PUT /v1/notify reads or sets the policy.',
+          '?surface=<label>&instanceId=<unique>&notifications=true registers a notification executor; PUT /v1/clients/<instance> configures eligibility. GET /v1/frame is the polling/recovery endpoint. GET/PUT /v1/machines and connect/disconnect/discover operations are hub-owned SSH settings.',
         ],
       },
       {
         type: 'callout',
-        title: 'The stream is the lifecycle',
-        text: 'An open subscription is a surface being present. nerve-hub counts them: when the last one disconnects it waits out a grace period (30s by default) and exits. Producer POSTs do not keep it alive.',
+        title: 'Resident hub lifecycle',
+        text: 'The hub stays resident after all surfaces disconnect. nerve-hub ensure owns singleton discovery, detached startup and readiness. Subscription counts only describe delivery routes; tasks remain in memory until the hub is restarted.',
       },
       { type: 'h2', text: 'Action protocol (producers poll themselves)' },
       {
@@ -957,9 +921,9 @@ curl -s -X POST 'http://127.0.0.1:17890/v1/actions/result?producerId=my-producer
         items: [
           'Jobs, timelines, and pending actions are memory-only for the nerve-hub process',
           'Your last prompt per job (extensions.lastPrompt, 400 characters) travels in the same loopback snapshot and lives in hub RAM only — it dies with the job and with the hub',
-          'Quitting Nerve clears runtime state completely',
-          'Only preferences (machines, colors, notifications, coach flags) use UserDefaults',
-          'Tunnel Hosts prefer your existing ~/.ssh/config + known_hosts; Nerve’s managed block only adds RemoteForward',
+          'Closing a surface leaves the hub and its runtime tasks intact; restarting the hub clears its local in-memory tasks',
+          'Only UI preferences use UserDefaults. Machine identity and SSH configuration are persisted by the hub. Runtime tasks stay in memory.',
+          'Every machine runs its own resident singleton hub. The local hub uses SSH LocalForward to reach the remote hub, calls remote nerve-hub ensure, and subscribes to its local-only task stream. It never installs remote binaries. Disconnect retains the snapshot and marks the origin offline; reconnect replaces it. SSH configuration and connections belong to the hub.',
           'Ingest never leaves 127.0.0.1',
           'Remotes only via SSH reverse tunnels you configure',
           'Hooks fail open — agents never block on Nerve',
@@ -1028,14 +992,14 @@ codex plugin add nerve@nerve`,
         type: 'table',
         headers: ['主机', '官方类型', '实际做什么'],
         rows: [
-          ['Claude Code', 'command（exec form）', '官方：`"command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/nerve.js"]`。原生 Node，不走 shell。'],
-          ['Grok', 'command', '`node grok-post.js` 把事件 JSON POST 到 http://127.0.0.1:17890/v1/hook。Grok 的 `type: http` 会拦截 loopback（SSRF）；连接失败失败开放。'],
-          ['Codex', 'command', '官方文档：python3 ${PLUGIN_ROOT}/hooks/…。Codex 没有 HTTP 钩子类型。脚本：hooks/nerve.py，async。'],
+          ['Claude Code', 'command（exec form）', '官方：`"command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/nerve.js"]`。原生 Node，不走 shell。除 SessionEnd 外 `async: true`。'],
+          ['Grok', 'command', '`node grok-post.js` 把事件 JSON 写到 http://127.0.0.1:17890/v1/hook 并在有界耗时内等待确认。Grok 的 `type: http` 会拦截 loopback（SSRF）。端口没开不会卡住这一轮。'],
+          ['Codex', 'command', '官方文档：python3 ${PLUGIN_ROOT}/hooks/…。Codex 没有 HTTP 钩子类型。脚本：hooks/nerve.py，除 SessionEnd 外 async。脚本只在有界耗时内等待确认。'],
         ],
       },
       {
         type: 'p',
-        text: 'Claude 在 Node 里映射后 POST /v1/snapshot。Codex 在 Python 里映射后 POST /v1/snapshot。Grok 的 command 钩子把原始事件 POST 到 /v1/hook，由 hub 映射。hub 没开时全部失败开放。官方生命周期事件都有槽位（Claude 不挂 WorktreeCreate/Remove：空钩子会让 worktree 创建失败）。没有切面映射的事件会触发并空操作，不会编造状态。',
+        text: 'Codex、Claude、Grok 都把原始事件转发到本机 /v1/hook?producer=…，仅采集会话、宿主 PID 和稳定终端 slot。状态映射、生命周期、会话替换、去重和回收全部由 hub 负责。网络等待有界，始终退出 0；SessionEnd 同步发送，其他注册项对应宿主提供的生命周期事件，不是重复的任务实现。',
       },
       { type: 'h2', text: '钩子会报告什么' },
       {
@@ -1115,7 +1079,7 @@ const zhMachinesPage: DocPage = {
         '打开设置 → 机器',
         '这台 Mac 始终存在（alias = hostname 短名 / Bonjour LocalHostName）',
         '远程列表从你的 ~/.ssh/config 加载——使用刷新控件重新读取 Hosts',
-        '启用一个 Host，然后点击连接。Nerve 只会注入 RemoteForward；连接详情仍保留在你的 SSH 配置中',
+        '每台机器运行自己的常驻单例 hub。本机 hub 通过 SSH LocalForward 连接远程 hub，先运行远程 nerve-hub ensure，再订阅仅本机任务的协议流；不会自动安装远程程序。断线保留快照并显示离线，重连全量替换。SSH 配置与连接由 hub 管理。',
       ],
     },
     {
@@ -1243,7 +1207,7 @@ run-shell ~/.tmux/plugins/nerve/surfaces/tmux/nerve.tmux`,
     { type: 'h2', text: '远程主机无需额外配置' },
     {
       type: 'p',
-      text: '如果一台机器已经有一条 RemoteForward 隧道连回你的 Mac（参见机器与远程主机），那么远程主机上的 127.0.0.1:17890 就已经是你 Mac 的 hub。在那里安装 helper、添加 run-shell 行，远程主机的 tmux 就会显示你的任务。helper 没有需要配置的“远程”概念——没有 host、port 或 env var。这与远程 agent 钩子 POST 到 loopback 却指向这台 Mac 是同一套设计。',
+      text: '每台机器运行自己的常驻单例 hub。本机 hub 通过 SSH LocalForward 连接远程 hub，先运行远程 nerve-hub ensure，再订阅仅本机任务的协议流；不会自动安装远程程序。断线保留快照并显示离线，重连全量替换。SSH 配置与连接由 hub 管理。',
     },
     { type: 'h2', text: '侧栏不发系统通知' },
     {
@@ -1322,7 +1286,7 @@ npm run watch`,
     {
       type: 'callout',
       title: '远程窗口无需额外配置',
-      text: 'VS Code Remote-SSH 窗口是另一套 extension host，连的是那台机器上的 127.0.0.1:17890。如果那边已经有 RemoteForward 隧道回到你的 Mac，看到的就是同一批任务。扩展里没有要填的 host 或端口。',
+      text: '每台机器运行自己的常驻单例 hub。本机 hub 通过 SSH LocalForward 连接远程 hub，先运行远程 nerve-hub ensure，再订阅仅本机任务的协议流；不会自动安装远程程序。断线保留快照并显示离线，重连全量替换。SSH 配置与连接由 hub 管理。',
     },
     { type: 'h2', text: '当视图不符合预期时' },
     {
@@ -1338,43 +1302,6 @@ npm run watch`,
     {
       type: 'p',
       text: './scripts/nerve.sh --verify-vscode 跑单元测试（status golden、frame 解析、focus 排序、hub 拉起）。它不会启动 VS Code UI。',
-    },
-  ],
-};
-
-const zhTetherPage: DocPage = {
-  slug: 'tether',
-  title: 'Tether 插件',
-  lede: '编译进 Tether 的扩展，画的是和 macOS 菜单栏同一条 nerve-hub 流。每台机器一个 hub；通知只发给被选出的那一个 surface。',
-  blocks: [
-    {
-      type: 'callout',
-      title: '只有一个 hub',
-      text: 'Tether 先探测 http://127.0.0.1:17890/v1/health。若 Nerve.app（或 tmux、VS Code）已经占用该端口，插件就连那个 hub。第二个 nerve-hub 抢不到绑定会以 already-running 退出。Producer 仍然从不拉起 hub。',
-    },
-    { type: 'h2', text: '安装' },
-    {
-      type: 'p',
-      text: '插件在本仓库 surfaces/tether，并在 Tether 应用的 composition root 注册。在 Tether → 设置 → 扩展 中启用。连上主机后，点工具栏里的 Nerve。',
-    },
-    {
-      type: 'code',
-      lang: 'bash',
-      code: `swift test --package-path surfaces/tether`,
-    },
-    { type: 'h2', text: '你会看到什么' },
-    {
-      type: 'ul',
-      items: [
-        '插件启用期间只保持一条 GET /v1/stream?surface=tether——这条连接才是 refcount，不是每个工作区标签',
-        '任务列表（能匹配 alias 时优先显示你从哪台主机打开的）',
-        '只有 hub 的 notify 租约把 tether 选为 owner 时才发 Ask 横幅',
-      ],
-    },
-    { type: 'h2', text: '通知' },
-    {
-      type: 'p',
-      text: 'Hub 统计打开的 stream，在 policy 为 single（默认）时选出一个 owner：macos，然后 tether，然后 windows，然后 vscode，然后 tmux。PUT /v1/notify { "policy": "all" } 恢复旧的「每个 surface 都发」。Nerve.app 和 Tether 扩展的设置都写这条路由。',
     },
   ],
 };
@@ -1464,7 +1391,7 @@ cargo install nerve-hub nerve-windows-surface`,
     { type: 'h2', text: '开机自启' },
     {
       type: 'p',
-      text: '默认关闭，需要时从托盘菜单打开。它写入 HKCU\\...\\CurrentVersion\\Run，会出现在任务管理器 → 启动项里，也就是你想关掉它时会去找的地方。值得知道的是：因为界面会一直持有数据流，开启自启会让 nerve-hub.exe 变成常驻进程，而不是你不看时就退出的那种。',
+      text: '默认关闭，需要时从托盘菜单打开。它写入 HKCU\\...\\CurrentVersion\\Run，会出现在任务管理器 → 启动项里，也就是你想关掉它时会去找的地方。值得知道的是：hub 按需启动后始终常驻，关闭所有界面也不会退出。',
     },
     { type: 'h2', text: '这里没有什么' },
     {
@@ -1493,7 +1420,7 @@ const zhStatusPage: DocPage = {
       items: [
         '端口固定且不可配置：绑定 17890 本身就是单实例锁，因此设置中没有端口字段（只显示可复制的 endpoint），也没有要设置的 NERVE_* env。',
         '当端口没有响应时，应用会自动启动 Nerve.app 中捆绑的 nerve-hub binary；否则就连接已运行的 hub。',
-        'Surface 使用引用计数。最后一个 SSE subscriber 断开后，hub 会等待一段宽限时间（默认 30s），然后自行退出。Producer POST 不会让它保持运行。',
+        'The hub stays resident after all surfaces disconnect. nerve-hub ensure owns singleton discovery, detached startup and readiness. Subscription counts only describe delivery routes; tasks remain in memory until the hub is restarted.',
         '每个 surface——菜单栏、tmux 插件、普通 curl——都读取同一份 frame，因此状态永远不依赖你打开了哪一个 surface。',
       ],
     },
@@ -1518,10 +1445,6 @@ const zhStatusPage: DocPage = {
     {
       type: 'p',
       text: '行上色块旁还有状态词，按 attention.reason 细分：“Approval needed”（approval / permission / auth）、“Input needed”（input / elicitation）、“Review needed”（review）、“Decision needed”（decision）、其余为“Needs attention”。刚结束一轮的打开会话显示“Turn complete”；已结束的显示“Completed”。只要 attention.level ≥ suggested，attention.title 就会覆盖行文本。',
-    },
-    {
-      type: 'p',
-      text: 'Tether 使用与 macOS 菜单栏应用相同的文案和六组 hex（Problem #FF3B30、Attention #FF9F0A、Running #0A84FF、Monitor #BF5AF2、Success #30D158、Inactive/Waiting #8E8E93）。',
     },
     { type: 'h2', text: '主会话生命周期' },
     {
@@ -1596,7 +1519,7 @@ const zhIngestPage: DocPage = {
       type: 'ul',
       items: [
         'nerve-hub：stderr，外加每日文件 ~/Library/Logs/Nerve/nerve-hub.log.YYYY-MM-DD（Linux：~/.local/state/nerve/logs/，Windows：%LOCALAPPDATA%\\Nerve\\Logs\\）。默认 info。`nerve-hub serve --verbose` 或 `RUST_LOG=nerve_hub=debug` 可看到每条 hook 和 surface 的 attach/detach。',
-        'macOS 应用和 Tether：Console.app，subsystem 分别为 app.nerve.Nerve 和 app.nerve.tether，category hub。',
+        'macOS 应用：Console.app，subsystem 为 app.nerve.Nerve，category hub。',
         'tmux / Windows 托盘：同一日志目录下的 nerve-tmux.log / nerve-windows.log。`RUST_LOG=nerve_surface_core=debug` 可看到每一帧。',
         'VS Code：Output 面板 → Nerve（log channel）。',
       ],
@@ -1667,23 +1590,23 @@ const zhIngestPage: DocPage = {
     {
       type: 'code',
       lang: 'json',
-      code: `{ "jobs": [ … ], "departed": [ … ], "notify": { "policy": "single", "owner": "macos", "surfaces": ["macos"], "watchers": 1 } }`,
+      code: JSON.stringify(hubFixture, null, 2),
     },
     {
       type: 'ul',
       items: [
         'jobs——权威的完整集合。连接时会收到第一个 frame。',
         'departed——自上一个 frame 以来已移除任务的终止状态（lifecycle ended、endedAt、outcome）。它是一个提示，让 surface 不会丢失结尾；jobs 仍是权威来源。',
-        'notify——打断租约。policy 为 single（选出一个 owner）或 all。owner 是 single 时允许发通知的 surface 标签。surfaces / watchers 是当前连接。旧版 hub 没有这个键，各 surface 各自决定。',
+        'notifications——带唯一通知 ID、目标客户端实例和连接的执行指令。Ask、级别升级、120 秒去重、single/all 与目标选择全部在 hub；surface 执行并回报。重连和轮询不重放历史通知；旧协议必须升级。',
         '重新连接就是重新同步——断开连接后，下一个第一 frame 仍然是完整集合。',
         'frame 中的每个任务都与 /v1/jobs 返回的任务形状相同，包括 hub 为它保存的时间线：最多 40 个条目，不包含 heartbeat。',
-        '?surface=<label> 为 notify 租约命名这条连接，不会过滤 jobs。GET/PUT /v1/notify 读取或设置 policy。',
+          '?surface=<label>&instanceId=<unique>&notifications=true registers a notification executor; PUT /v1/clients/<instance> configures eligibility. GET /v1/frame is the polling/recovery endpoint. GET/PUT /v1/machines and connect/disconnect/discover operations are hub-owned SSH settings.',
       ],
     },
     {
       type: 'callout',
       title: 'Stream 就是生命周期',
-      text: '一个打开的 subscription 就表示一个 surface 存在。nerve-hub 会对它们计数：当最后一个断开时，它会等待宽限期（默认 30s），然后退出。Producer POST 不会让它保持运行。',
+      text: 'The hub stays resident after all surfaces disconnect. nerve-hub ensure owns singleton discovery, detached startup and readiness. Subscription counts only describe delivery routes; tasks remain in memory until the hub is restarted.',
     },
     { type: 'h2', text: 'Action 协议（producer 自行轮询）' },
     {
@@ -1696,7 +1619,7 @@ curl -s -X POST 'http://127.0.0.1:17890/v1/actions/result?producerId=my-producer
     },
     {
       type: 'p',
-      text: '不存在 /v1/actions/invoke——hub 会回答 404。执行 action（Open / Focus、Copy）是 surface capability：hub 只回显 producer 声明的 actions，自己不会推导任何 action。',
+      text: '不存在 /v1/actions/invoke——hub 会回答 404。执行 action（Open / Focus、Copy）是 surface capability：hub 统一提供展示操作；surface 只执行 Open / Focus、Copy 等导航操作。',
     },
     {
       type: 'p',
@@ -1715,9 +1638,9 @@ const zhPrivacyPage: DocPage = {
       items: [
         '任务、时间线和 pending actions 只存在于 nerve-hub 进程内存中',
         '每个任务的最后一条 prompt（extensions.lastPrompt，400 个字符）会在同一个本地回环快照中传输，且只存在于 hub RAM——它会随任务和 hub 一起消失',
-        '退出 Nerve 会完全清除运行时状态',
-        '只有偏好设置（machines、colors、notifications、coach flags）使用 UserDefaults',
-        '隧道 Hosts 优先使用你现有的 ~/.ssh/config + known_hosts；Nerve 的受管块只会添加 RemoteForward',
+        '关闭 Nerve 界面保留 hub 与任务；重启 hub 才会清除本机内存状态',
+        '只有 UI 偏好保存在 UserDefaults；机器身份与 SSH 配置由 hub 持久化，任务仅存于内存',
+        '每台机器运行自己的常驻单例 hub。本机 hub 通过 SSH LocalForward 连接远程 hub，先运行远程 nerve-hub ensure，再订阅仅本机任务的协议流；不会自动安装远程程序。断线保留快照并显示离线，重连全量替换。SSH 配置与连接由 hub 管理。',
         '接入永远不会离开 127.0.0.1',
         '远程主机只通过你配置的 SSH 反向隧道连接',
         '钩子失败开放——agent 永远不会因 Nerve 而阻塞',
@@ -1736,6 +1659,19 @@ const zhDocPages: DocPage[] = [
     title: '开始使用',
     lede: 'Nerve 通过开放的本地回环协议，汇总 agent 已经在推送的状态；你也可以自己实现这套协议。',
     blocks: [
+      { type: 'h2', text: 'macOS 上的 Tether 插件' },
+      {
+        type: 'p',
+        text: '在 Tether 的 Settings → Extensions → Install 中选择本仓库的 surfaces/tether 目录，即可动态安装 Nerve 的任务面板和常驻底部状态条。允许网络权限后，插件只读取固定的本机 hub SSE 地址。nerve-hub 需要单独运行；Web 插件不会安装或启动原生程序。启停和卸载都在 Extensions 中完成。',
+      },
+      {
+        type: 'p',
+        text: '面板中的状态统一使用同一种圆点，以颜色区分。悬停查看含义，点击过滤，再次点击恢复全部。通过搜索图标或 ⌘/Ctrl F 搜索，用方向键浏览，点击任务或按 Enter 展开活动与时间线。连接中断时保留并淡化最后一份快照；悬停连接圆点查看恢复说明，点击重连图标重新连接。',
+      },
+      {
+        type: 'p',
+        text: '使用支持 tabIndicator 插件贡献的 Tether 版本时，任务状态还会显示为对应 tab 名称前的彩色圆点。关联依据实际机器 hostname 和控制 TTY，重命名 tab 不影响关联。需要同步更新 hub、钩子和已安装的 Web 插件；下一条钩子事件会提供终端身份。hub 为每个终端选择一个状态；分屏 tab 显示当前聚焦终端的状态，与 hub 断开后清除标志。',
+      },
       { type: 'h2', text: '系统要求' },
       {
         type: 'p',
@@ -1802,7 +1738,6 @@ npm run build    # static → index/dist/`,
   zhMachinesPage,
   zhTmuxPage,
   zhVscodePage,
-  zhTetherPage,
   zhWindowsPage,
   zhStatusPage,
   zhIngestPage,

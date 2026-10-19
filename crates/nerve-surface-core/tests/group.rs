@@ -14,7 +14,7 @@ use time::macros::datetime;
 const NOW: OffsetDateTime = datetime!(2026-07-19 12:00:00 UTC);
 
 fn jobs(value: serde_json::Value) -> Vec<JobView> {
-    serde_json::from_value(value).expect("job fixtures")
+    nerve_surface_core::testkit::jobs(value)
 }
 
 /// `(section title, [job id])` — the whole observable result in one literal.
@@ -32,9 +32,10 @@ fn shape(jobs: &[JobView], filter: StatusFilter) -> Vec<(String, Vec<String>)> {
         .collect()
 }
 
-/// The fixture targets the one case that breaks if `now` is resampled per
-/// comparison instead of passed in: two jobs carrying no `updatedAt` both fall
-/// back to `now`, tie there, and are only then ordered by `createdAt`.
+/// Order inside a machine is status, then createdAt descending. A job with no
+/// createdAt falls back to updatedAt, then to `now`, so a missing timestamp
+/// does not reshuffle when `now` changes. `a-stale` has only an old updatedAt,
+/// which is why it sits after the two dated rows.
 #[test]
 fn sections_group_by_machine_and_order_within_each() {
     let fixtures = jobs(json!([

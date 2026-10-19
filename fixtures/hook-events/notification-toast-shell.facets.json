@@ -1,8 +1,8 @@
 {
   "lifecycle": "active",
   "current": {
-    "type": "subagent",
-    "name": "background",
+    "type": "info",
+    "name": null,
     "summary": "1 shell still running"
   },
   "attention": {

@@ -19,18 +19,22 @@ import Foundation
 /// unknown keys are ignored and a missing array decodes as empty rather than
 /// throwing away the whole frame.
 struct HubFrame: Decodable, Sendable, Equatable {
+    var hubInstanceId: String = ""
+    var revision: UInt64 = 0
+    var summary: HubSummary = .init()
+    var notifications: [HubNotification] = []
     var jobs: [Job]
     var departed: [Job]
     /// Hub-owned observation log per job id. Absent key = that job has none.
     var timelines: [String: [TimelineEntry]]
-    /// Who may raise an OS banner. Absent (older hub) means everyone.
+    /// Hub policy metadata; execution is driven by notification commands.
     var notify: NotifyLease
 
     init(
         jobs: [Job] = [],
         departed: [Job] = [],
         timelines: [String: [TimelineEntry]] = [:],
-        notify: NotifyLease = .legacy
+        notify: NotifyLease = .empty
     ) {
         self.jobs = jobs
         self.departed = departed
@@ -41,27 +45,23 @@ struct HubFrame: Decodable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case jobs
         case departed
-        case notify
+        case notify, protocolVersion, notifications, summary, hubInstanceId, revision
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        guard try c.decode(Int.self, forKey: .protocolVersion) == 2 else { throw DecodingError.dataCorruptedError(forKey: .protocolVersion, in: c, debugDescription: "Upgrade Nerve hub: protocol version 2 required") }
+        hubInstanceId = try c.decode(String.self,forKey:.hubInstanceId)
+        revision = try c.decode(UInt64.self,forKey:.revision)
+        summary = try c.decodeIfPresent(HubSummary.self,forKey:.summary) ?? .init()
+        notifications = try c.decodeIfPresent([HubNotification].self, forKey: .notifications) ?? []
         // Per-job, not per-array: one unreadable row must not blank the panel.
         let live = (try? c.decode(LossyArray<PublishedJob>.self, forKey: .jobs))?.elements ?? []
         let gone = (try? c.decode(LossyArray<PublishedJob>.self, forKey: .departed))?.elements ?? []
         jobs = live.map(\.job)
         departed = gone.map(\.job)
         timelines = Self.timelines(from: live)
-        notify = try c.decodeIfPresent(NotifyLease.self, forKey: .notify) ?? .legacy
-    }
-
-    /// `GET /v1/jobs` — bare array, same rows as a connect frame's `jobs`.
-    init(jobsListJSON data: Data, decoder: JSONDecoder) throws {
-        let live = (try? decoder.decode(LossyArray<PublishedJob>.self, from: data))?.elements ?? []
-        jobs = live.map(\.job)
-        departed = []
-        timelines = Self.timelines(from: live)
-        notify = .legacy
+        notify = try c.decodeIfPresent(NotifyLease.self, forKey: .notify) ?? .empty
     }
 
     private static func timelines(from live: [PublishedJob]) -> [String: [TimelineEntry]] {
@@ -106,6 +106,7 @@ private struct PublishedJob: Decodable {
 
     init(from decoder: Decoder) throws {
         job = try Job(from: decoder)
+        guard job.display != nil else { throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Missing hub projection")) }
         let c = try decoder.container(keyedBy: CodingKeys.self)
         // A timeline the surface cannot read (older or newer entry shape) costs
         // one detail strip; the job itself still has to render, so an
@@ -116,9 +117,7 @@ private struct PublishedJob: Decodable {
 
 /// Who may raise an OS banner, as the hub published it.
 ///
-/// `legacy` is what an older hub (no `notify` key) means: every surface
-/// decides for itself. `single` elects one `owner` among the connected
-/// surfaces so the menu bar and a Tether plugin do not both fire.
+/// Metadata only. Surfaces do not elect or infer notification delivery.
 struct NotifyLease: Decodable, Sendable, Equatable {
     enum Policy: String, Decodable, Sendable, Equatable {
         case all
@@ -130,8 +129,8 @@ struct NotifyLease: Decodable, Sendable, Equatable {
     var surfaces: [String]
     var watchers: Int
 
-    /// An older hub omitted the key. Everyone may fire.
-    static let legacy = NotifyLease(policy: .all, owner: nil, surfaces: [], watchers: 0)
+    /// Observation defaults; notification execution requires an explicit command.
+    static let empty = NotifyLease(policy: .single, owner: nil, surfaces: [], watchers: 0)
 
     private enum CodingKeys: String, CodingKey {
         case policy, owner, surfaces, watchers
@@ -153,10 +152,23 @@ struct NotifyLease: Decodable, Sendable, Equatable {
         watchers = try c.decodeIfPresent(Int.self, forKey: .watchers) ?? 0
     }
 
-    func mayInterrupt(surface: String) -> Bool {
-        switch policy {
-        case .all: return true
-        case .single: return owner == surface
-        }
-    }
+
+}
+
+struct HubNotification: Decodable, Sendable, Equatable {
+    var id: String
+    var target: String
+    var jobId: String
+    var title: String
+    var body: String
+    var level: String
+    var sound: Bool
+}
+
+struct HubSummary: Decodable, Sendable, Equatable {
+    var total: Int = 0
+    var counts: [String:Int] = [:]
+    var ask: Int = 0
+    var hardAsk: Bool = false
+    var worstStatus: String = "inactive"
 }

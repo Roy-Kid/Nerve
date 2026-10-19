@@ -5,7 +5,7 @@
 //! policy, which one of them is allowed to interrupt. `All` is the old
 //! behaviour — every surface that has notifications on may fire, and two on
 //! one machine both will. `Single` (the default) elects one owner so the
-//! macOS menu bar and a Tether plugin do not both banner the same Ask.
+//! macOS menu bar and the VS Code extension do not both banner the same Ask.
 //!
 //! The preference order is the native interrupt surfaces first, then the
 //! in-app ones. A missing label falls through to lexicographic order so a
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum NotifyPolicy {
     /// Exactly one connected surface may fire. Default, because two Nerve
-    /// surfaces on one machine (menu bar + Tether, tray + VS Code) otherwise
+    /// surfaces on one machine (menu bar + VS Code, tray + VS Code) otherwise
     /// both interrupt for the same Ask.
     #[default]
     Single,
@@ -48,11 +48,10 @@ impl NotifyPolicy {
 
 /// Native interrupt surfaces, most specific first.
 ///
-/// macOS menu bar and Tether both speak UserNotifications; Windows the tray
-/// toast. VS Code and tmux interrupt inside their own UI. Prefer the OS
+/// The macOS menu bar speaks UserNotifications; Windows the tray toast. VS Code and tmux interrupt inside their own UI. Prefer the OS
 /// banner when one is connected, so an editor toast does not win over the
 /// menu bar the user already has.
-const PREFER: &[&str] = &["macos", "tether", "windows", "vscode", "tmux"];
+const PREFER: &[&str] = &["macos", "windows", "vscode", "tmux"];
 
 /// The lease one frame (or `/v1/health`) carries.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -142,24 +141,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn single_prefers_macos_over_tether() {
+    fn single_prefers_macos_over_vscode() {
         let owner = elect(
             NotifyPolicy::Single,
-            &["tether".into(), "macos".into(), "vscode".into()],
+            &["vscode".into(), "macos".into(), "tmux".into()],
         );
         assert_eq!(owner.as_deref(), Some("macos"));
     }
 
     #[test]
-    fn single_falls_to_tether_when_macos_is_gone() {
-        let owner = elect(NotifyPolicy::Single, &["vscode".into(), "tether".into()]);
-        assert_eq!(owner.as_deref(), Some("tether"));
+    fn single_falls_to_vscode_when_macos_is_gone() {
+        let owner = elect(NotifyPolicy::Single, &["tmux".into(), "vscode".into()]);
+        assert_eq!(owner.as_deref(), Some("vscode"));
     }
 
     #[test]
     fn all_elects_nobody() {
         assert_eq!(
-            elect(NotifyPolicy::All, &["macos".into(), "tether".into()]),
+            elect(NotifyPolicy::All, &["macos".into(), "vscode".into()]),
             None
         );
     }

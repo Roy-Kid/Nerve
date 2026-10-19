@@ -219,7 +219,7 @@
     "package:prepare": "cross-env NODE_ENV=production npm run build",
     "package": "npm run package:prepare",
     "vscode:prepublish": "npm run package",
-    "test:compile": "tsc --project tsconfig.test.json",
+    "test:compile": "cargo build --manifest-path ../Cargo.toml -p nerve-hub --example project && tsc --project tsconfig.test.json",
     "test:unit:run": "mocha --ui tdd \"out-test/tests/unit/**/*.test.js\"",
     "test:unit": "npm-run-all test:compile test:unit:run",
     "test": "npm run test:unit"

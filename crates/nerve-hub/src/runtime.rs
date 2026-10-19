@@ -1,10 +1,4 @@
-//! The assembled hub: one store, one frame pump, one surface count, one timer.
-//!
-//! Everything below is wiring and scheduling. The rules live in the modules
-//! being wired — what a frame says is [`crate::sse::Frame`]'s, when a hub stops
-//! is [`crate::lifecycle`]'s, what a tick does is the store's — so this file
-//! decides only who talks to whom, and how often.
-
+//! Resident hub assembly: store, projection pump, machine manager and maintenance.
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -14,7 +8,7 @@ use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 
 use crate::http::{self, HubState, StreamState};
-use crate::lifecycle::{ExitSignal, GraceTimer, RosterGuard, SurfaceRoster};
+use crate::lifecycle::{RosterGuard, SurfaceRoster};
 use crate::sse::{Broadcaster, ChangeSignal};
 use crate::state::JobStore;
 
@@ -27,8 +21,9 @@ pub struct HubRuntime {
     changes: ChangeSignal,
     frames: Arc<Broadcaster>,
     roster: SurfaceRoster,
-    exit: ExitSignal,
     background: Vec<JoinHandle<()>>,
+    machines: crate::federation::Machines,
+    slots: Arc<Mutex<crate::hook::SlotMap>>,
 }
 
 impl HubRuntime {
@@ -38,9 +33,8 @@ impl HubRuntime {
 
     /// Assemble a hub around `store` and start its background work.
     ///
-    /// The grace timer is armed from here on: a surface may spawn a hub and die
-    /// before it ever connects, and that hub must still go away.
-    pub fn new(store: JobStore, grace: Duration) -> Self {
+    /// The daemon stays resident independent of subscription count.
+    pub fn new(store: JobStore) -> Self {
         let store = Arc::new(Mutex::new(store));
         let changes = ChangeSignal::new();
         let roster = SurfaceRoster::new(changes.clone());
@@ -50,11 +44,9 @@ impl HubRuntime {
             Broadcaster::WINDOW,
             roster.clone(),
         ));
-        let exit = ExitSignal::new();
 
         let background = vec![
             tokio::spawn(Arc::clone(&frames).pump()),
-            tokio::spawn(GraceTimer::new(grace, roster.watch(), exit.clone()).run()),
             tokio::spawn(
                 Maintenance {
                     store: Arc::clone(&store),
@@ -65,12 +57,14 @@ impl HubRuntime {
             ),
         ];
 
+        let machines = crate::federation::Machines::new(store.clone(), changes.clone());
         Self {
+            slots: Arc::new(Mutex::new(crate::hook::SlotMap::new())),
+            machines,
             store,
             changes,
             frames,
             roster,
-            exit,
             background,
         }
     }
@@ -80,12 +74,20 @@ impl HubRuntime {
     /// Callable as often as needed — every router shares this runtime's one
     /// store and one broadcaster, so a write through any of them reaches a
     /// stream served by any other.
+    pub fn start_connections(&self) {
+        self.machines.start();
+    }
+
     pub fn router(&self) -> Router {
-        http::router(HubState::from_shared(
-            Arc::clone(&self.store),
-            self.changes.clone(),
-            self.roster.clone(),
-        ))
+        http::router(
+            HubState::from_shared_with_machines(
+                Arc::clone(&self.store),
+                self.changes.clone(),
+                self.roster.clone(),
+                self.machines.clone(),
+            )
+            .with_slots(self.slots.clone()),
+        )
         .merge(http::stream_router(StreamState::new(
             Arc::clone(&self.frames),
             self.roster.clone(),
@@ -95,7 +97,7 @@ impl HubRuntime {
     /// Count one surface as present until the returned guard drops.
     ///
     /// The SSE route takes one per connection; a caller can take one directly
-    /// to hold the hub open for its own reasons. Lifecycle tests use this
+    /// to register presence for routing. Lifecycle tests use this
     /// rather than opening a socket.
     pub fn subscribe(&self) -> RosterGuard {
         self.roster.subscribe("anonymous")
@@ -105,8 +107,14 @@ impl HubRuntime {
     ///
     /// Observation only: asking has no effect on the count or the timer, and
     /// asking after the fact is answered immediately.
+    #[expect(
+        clippy::manual_async_fn,
+        reason = "the shutdown future must not borrow the runtime; callers require a static future"
+    )]
     pub fn shutdown(&self) -> impl Future<Output = ()> + Send + 'static {
-        self.exit.wait()
+        async {
+            let _ = tokio::signal::ctrl_c().await;
+        }
     }
 }
 

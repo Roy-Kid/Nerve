@@ -11,7 +11,7 @@ use time::macros::datetime;
 const NOW: OffsetDateTime = datetime!(2026-07-19 12:00:00 UTC);
 
 fn jobs() -> Vec<JobView> {
-    serde_json::from_value(json!([
+    nerve_surface_core::testkit::jobs(json!([
         { "id": "a-run", "name": "a-run", "alias": "alpha",
           "current": { "type": "tool" }, "createdAt": "2026-07-19T08:00:00Z" },
         { "id": "b-ask", "name": "b-ask", "alias": "Beta",
@@ -19,7 +19,6 @@ fn jobs() -> Vec<JobView> {
         { "id": "a-fail", "name": "a-fail", "alias": "alpha",
           "lifecycle": "ended", "outcome": "failure" },
     ]))
-    .expect("job fixtures")
 }
 
 fn shape(sections: &[Section], jobs: &[JobView]) -> Vec<(String, Vec<String>)> {
@@ -60,7 +59,11 @@ fn priority_mode_is_one_flat_list_loudest_first() {
         .iter()
         .map(|index| jobs[*index].id.as_str())
         .collect();
-    assert_eq!(ids[0], "b-ask", "an ask outranks everything: {ids:?}");
+    assert_eq!(
+        ids,
+        ["a-fail", "b-ask", "a-run"],
+        "a problem outranks an ask, and both outrank running"
+    );
 }
 
 #[test]
@@ -69,8 +72,8 @@ fn status_mode_names_each_bucket_and_skips_empty_ones() {
     let sections = of(&jobs, GroupMode::Status, StatusFilter::default(), NOW);
     let titles: Vec<&str> = sections.iter().map(|s| s.title.as_str()).collect();
 
-    assert!(titles.contains(&"attention"), "{titles:?}");
-    assert!(titles.contains(&"running"), "{titles:?}");
+    assert!(titles.contains(&"Needs you"), "{titles:?}");
+    assert!(titles.contains(&"Running"), "{titles:?}");
     assert!(
         !titles.contains(&"monitor"),
         "an empty bucket was drawn: {titles:?}"
@@ -82,9 +85,7 @@ fn status_mode_orders_buckets_loudest_first() {
     let jobs = jobs();
     let sections = of(&jobs, GroupMode::Status, StatusFilter::default(), NOW);
     let titles: Vec<&str> = sections.iter().map(|s| s.title.as_str()).collect();
-    let attention = titles.iter().position(|t| *t == "attention");
-    let running = titles.iter().position(|t| *t == "running");
-    assert!(attention < running, "{titles:?}");
+    assert_eq!(titles, ["Problem", "Needs you", "Running"]);
 }
 
 /// The ribbon is built from this, so it has to agree with the list beneath it —

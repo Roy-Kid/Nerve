@@ -160,10 +160,9 @@ impl JobTarget {
             });
         }
         let workspace = job_path(job).map(|path| normalize_path(&path));
-        let tty = job
-            .extensions
-            .pid
-            .and_then(|pid| procs::ProcTable::current().tty_of(pid).map(str::to_string));
+        let tty = job.extensions.pid.and_then(|pid| {
+            procs::ProcTable::with_current(|table| table.tty_of(pid).map(str::to_string))
+        });
         // Nothing to match on — the job never said where it runs.
         (workspace.is_some() || tty.is_some()).then_some(Self::Local { workspace, tty })
     }
@@ -338,7 +337,7 @@ fn locality(pane: &PaneRow<'_>, sidebar: &SidebarPane) -> PaneRank {
 /// the question is "who is running here", and the answer is a handful of pids
 /// the caller matches against what the hub reported.
 pub(crate) fn pids_on_tty(tty: &str) -> Vec<u32> {
-    procs::ProcTable::current().pids_on_tty(tty)
+    procs::ProcTable::with_current(|table| table.pids_on_tty(tty))
 }
 
 fn normalize_path(path: &Path) -> PathBuf {

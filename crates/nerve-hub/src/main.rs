@@ -11,6 +11,13 @@ fn main() -> ExitCode {
             println!("{USAGE}");
             ExitCode::from(EXIT_OK)
         }
+        Ok(Command::Ensure) => match nerve_hub::ensure::ensure() {
+            Ok(()) => ExitCode::from(EXIT_OK),
+            Err(error) => {
+                eprintln!("nerve-hub: {error}");
+                ExitCode::from(EXIT_FAILURE)
+            }
+        },
         Ok(Command::Hook) => ExitCode::from(nerve_hub::hook::forward_stdin() as u8),
         Ok(Command::Serve(args)) => {
             nerve_hub::log::init(args.verbose());
@@ -24,15 +31,23 @@ fn main() -> ExitCode {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn serve(args: ServeArgs) -> ExitCode {
-    match Hub::new(args.grace()).serve().await {
+async fn serve(_args: ServeArgs) -> ExitCode {
+    match Hub::new().serve().await {
         Ok(()) => ExitCode::from(EXIT_OK),
         Err(err) => {
             eprintln!("nerve-hub: {err}");
             match err {
                 // Surfaces spawn-and-forget: "a hub owns 17890" already holds,
                 // so a bind conflict must not look like a failure.
-                ServeError::AlreadyRunning => ExitCode::from(EXIT_OK),
+                ServeError::AlreadyRunning => {
+                    match tokio::task::spawn_blocking(nerve_hub::ensure::probe).await {
+                        Ok(Ok(true)) => ExitCode::from(EXIT_OK),
+                        _ => {
+                            eprintln!("port 17890 is occupied by an incompatible service");
+                            ExitCode::from(EXIT_FAILURE)
+                        }
+                    }
+                }
                 ServeError::Io(_) => ExitCode::from(EXIT_FAILURE),
             }
         }

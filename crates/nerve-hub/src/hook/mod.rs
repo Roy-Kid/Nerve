@@ -12,7 +12,7 @@ use crate::clock::Clock;
 use crate::model::Job;
 use crate::state::JobStore;
 
-mod build;
+pub(crate) mod build;
 mod map;
 mod payload;
 
@@ -128,7 +128,11 @@ pub fn jobs_from_event(
         return Vec::new();
     };
     let session = payload::session_id(payload);
-    let slot = build::slot_id(producer, payload);
+    let slot = format!(
+        "{}/{}",
+        producer.id(),
+        build::resolved_slot(producer, payload)
+    );
     let mut jobs = Vec::new();
     if event == "sessionend" {
         slots.clear_if(&slot, &session);
@@ -151,6 +155,19 @@ pub fn apply(
     producer: Producer,
     payload: &Value,
 ) -> usize {
+    let session = payload::session_id(payload);
+    let namespace = format!("{}/{}", producer.key(), session);
+    if let Some(id) = payload
+        .get("event_id")
+        .or_else(|| payload.get("hook_event_id"))
+        .and_then(Value::as_str)
+        && !store.remember_hook(&namespace, id)
+    {
+        return 0;
+    }
+    if !store.remember_raw_hook(producer.key(), &session, payload) {
+        return 0;
+    }
     let mut jobs = jobs_from_event(producer, payload, store.clock(), slots);
     if jobs.is_empty() {
         return 0;
@@ -161,12 +178,26 @@ pub fn apply(
             .as_ref()
             .and_then(|context| context.workspace.clone())
             .unwrap_or_default();
-        (job.id.clone(), workspace)
+        let slot = job
+            .extensions
+            .get("slot")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string();
+        (job.id.clone(), workspace, slot)
     });
-    if let Some((incoming_id, workspace)) = incoming {
+    if let Some((incoming_id, workspace, incoming_slot)) = incoming {
         let prefix = format!("{}:", producer.id());
-        for occupant in store.live_ids_in_workspace(producer.id(), &workspace) {
+        let occupants = store.live_ids_in_workspace(producer.id(), &workspace);
+        for occupant in occupants {
             if occupant == incoming_id {
+                continue;
+            }
+            // A distinct injected slot is a different terminal. Evict only the
+            // same stored slot, or a row that never recorded one (restart
+            // fallback / cwd slot). Two sessions in one workspace both stay.
+            let stored = store.stored_slot(&occupant).unwrap_or("").to_string();
+            if !stored.is_empty() && stored != incoming_slot {
                 continue;
             }
             let prev = occupant.strip_prefix(&prefix).unwrap_or(occupant.as_str());
@@ -354,6 +385,115 @@ mod tests {
             .filter_map(|job| job["id"].as_str().map(str::to_string))
             .collect();
         assert_eq!(ids, vec!["grok:live".to_string()]);
+    }
+
+    #[test]
+    fn two_slots_in_one_workspace_both_stay() {
+        let (mut store, mut slots) = store();
+        apply(
+            &mut store,
+            &mut slots,
+            Producer::Grok,
+            &json!({
+                "hook_event_name": "PreToolUse",
+                "session_id": "left",
+                "cwd": "/tmp/p",
+                "slotId": "slot-left",
+                "tool_name": "read_file"
+            }),
+        );
+        apply(
+            &mut store,
+            &mut slots,
+            Producer::Grok,
+            &json!({
+                "hook_event_name": "PreToolUse",
+                "session_id": "right",
+                "cwd": "/tmp/p",
+                "slotId": "slot-right",
+                "tool_name": "read_file"
+            }),
+        );
+        let mut ids: Vec<String> = store
+            .jobs_json()
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|job| job["id"].as_str().map(str::to_string))
+            .collect();
+        ids.sort();
+        assert_eq!(ids, vec!["grok:left".to_string(), "grok:right".to_string()]);
+    }
+
+    #[test]
+    fn the_same_injected_slot_still_supersedes() {
+        let (mut store, mut slots) = store();
+        apply(
+            &mut store,
+            &mut slots,
+            Producer::Grok,
+            &json!({
+                "hook_event_name": "SessionStart",
+                "session_id": "old",
+                "cwd": "/tmp/p",
+                "slotId": "same-window"
+            }),
+        );
+        apply(
+            &mut store,
+            &mut slots,
+            Producer::Grok,
+            &json!({
+                "hook_event_name": "SessionStart",
+                "session_id": "new",
+                "cwd": "/tmp/p",
+                "slotId": "same-window"
+            }),
+        );
+        let ids: Vec<String> = store
+            .jobs_json()
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|job| job["id"].as_str().map(str::to_string))
+            .collect();
+        assert_eq!(ids, vec!["grok:new".to_string()]);
+    }
+
+    #[test]
+    fn a_later_snapshot_keeps_created_at() {
+        use std::time::Duration;
+
+        let clock = Arc::new(FakeClock::new(datetime!(2026-08-23 12:00:00 UTC)));
+        let mut store = JobStore::new(clock.clone(), "test-mac".into(), Arc::new(SignalProbe));
+        let mut slots = SlotMap::new();
+        apply(
+            &mut store,
+            &mut slots,
+            Producer::Claude,
+            &json!({
+                "hook_event_name": "SessionStart",
+                "session_id": "s1",
+                "cwd": "/tmp/p"
+            }),
+        );
+        let created = store.jobs_json()[0]["createdAt"].clone();
+        clock.advance(Duration::from_secs(30));
+        apply(
+            &mut store,
+            &mut slots,
+            Producer::Claude,
+            &json!({
+                "hook_event_name": "PreToolUse",
+                "session_id": "s1",
+                "cwd": "/tmp/p",
+                "tool_name": "Bash"
+            }),
+        );
+        let job = &store.jobs_json()[0];
+        assert_eq!(job["createdAt"], created);
+        assert_eq!(job["startedAt"], created);
+        assert_ne!(job["updatedAt"], created);
     }
 
     #[test]

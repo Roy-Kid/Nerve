@@ -1,15 +1,4 @@
-//! One SSE attach, and how long to wait before the next one.
-//!
-//! The connection *is* a surface's refcount presence: the hub counts open
-//! streams, so holding one open is what keeps it alive and dropping one is how
-//! it learns this surface left (CLAUDE.md invariant 4). Nothing else here has
-//! to know that.
-//!
-//! Blocking and pull-based, with no runtime and no clock: [`Backoff`] only
-//! computes a delay and the composition root is what waits. That is what lets a
-//! whole reconnect story be a unit test, and what lets a terminal, an editor
-//! and a tray share one implementation of it.
-
+//! SSE attachment and transport retry. Disconnect never stops the authority.
 use std::time::Duration;
 
 use crate::frame::Frame;

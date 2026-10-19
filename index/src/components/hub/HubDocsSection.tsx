@@ -7,7 +7,7 @@ import { ease } from '../../lib/motion';
 import { homeLinkChevron, sectionBody, sectionTitle } from '../../lib/ui';
 
 const protocolLink =
-  'group inline-flex w-fit items-baseline text-[17px] font-[500] text-[#8eb8ff] hover:underline hover:underline-offset-4 focus-visible:rounded focus-visible:outline-[3px] focus-visible:outline-offset-4 focus-visible:outline-blue/40';
+  'group inline-flex w-fit items-baseline text-[17px] font-[500] text-night-link hover:underline hover:underline-offset-4 focus-visible:rounded focus-visible:outline-[3px] focus-visible:outline-offset-4 focus-visible:outline-blue/40';
 
 function FlowNode({ label, detail }: { label: string; detail: string }) {
   return (
@@ -20,10 +20,10 @@ function FlowNode({ label, detail }: { label: string; detail: string }) {
 
 function FlowArrow({ endpoint }: { endpoint: string }) {
   return (
-    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 py-2 font-mono text-[10px] text-[#8eb8ff] max-sm:py-1">
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 py-2 font-mono text-[10px] text-night-link max-sm:py-1">
       <span className="h-px bg-white/12" />
       <code>{endpoint}</code>
-      <span className="relative h-px bg-white/12 after:absolute after:top-1/2 after:right-0 after:size-1.5 after:-translate-y-1/2 after:rotate-45 after:border-t after:border-r after:border-[#8eb8ff]" />
+      <span className="relative h-px bg-white/12 after:absolute after:top-1/2 after:right-0 after:size-1.5 after:-translate-y-1/2 after:rotate-45 after:border-t after:border-r after:border-night-link" />
     </div>
   );
 }
@@ -46,7 +46,7 @@ export function HubDocsSection() {
           viewport={{ once: true, margin: '-15%' }}
           transition={ease(0.65)}
         >
-          <p className="m-0 mb-4 text-sm/[1.5] font-[650] text-[#8eb8ff]">
+          <p className="m-0 mb-4 text-sm/[1.5] font-[650] text-night-link">
             {t.hub.open.kicker}
           </p>
           <h2 id="home-open-title" className={sectionTitle}>
@@ -73,7 +73,7 @@ export function HubDocsSection() {
         </motion.header>
 
         <motion.figure
-          className="m-0 rounded-[22px] border border-white/12 bg-[#0d1221] p-[clamp(18px,3vw,30px)] shadow-[0_36px_90px_rgb(0_0_0/38%)] max-sm:rounded-2xl max-sm:p-3"
+          className="m-0 rounded-[22px] border border-white/12 bg-night p-[clamp(18px,3vw,30px)] shadow-night max-sm:rounded-2xl max-sm:p-3"
           initial={reduced ? false : { opacity: 0, y: 34, scale: 0.97 }}
           whileInView={{ opacity: 1, y: 0, scale: 1 }}
           viewport={{ once: true, margin: '-10%' }}
@@ -83,7 +83,7 @@ export function HubDocsSection() {
           <FlowNode label={t.hub.open.producers} detail={t.hub.open.producerRole} />
           <FlowArrow endpoint="POST /v1/snapshot" />
           <div className="rounded-[18px] border border-blue/55 bg-blue/12 px-5 py-5 shadow-[0_0_42px_rgb(0_122_255/16%)] max-sm:rounded-xl max-sm:px-3 max-sm:py-3">
-            <div className="flex items-center gap-2 font-mono text-[11px] text-[#8eb8ff]">
+            <div className="flex items-center gap-2 font-mono text-[11px] text-night-link">
               <span className="size-2 rounded-full bg-status-running shadow-[0_0_12px_var(--color-status-running)]" />
               nerve-hub · 127.0.0.1:17890
             </div>

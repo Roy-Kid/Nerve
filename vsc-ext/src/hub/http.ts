@@ -117,3 +117,14 @@ export function getStream(
   request.on("error", onEnd);
   return request;
 }
+
+export function sendJson(path: string, method: string, value: unknown): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(value);
+    const request = http.request({host:HUB_HOST,port:HUB_PORT,path,method,timeout:5000,
+      headers:{"Content-Type":"application/json","Content-Length":Buffer.byteLength(body)}}, response => {
+      response.resume(); response.on("end", () => (response.statusCode ?? 500) < 300 ? resolve() : reject(new Error(`hub HTTP ${response.statusCode}`)));
+    });
+    request.on("error",reject); request.on("timeout",()=>request.destroy(new Error("hub timeout"))); request.end(body);
+  });
+}

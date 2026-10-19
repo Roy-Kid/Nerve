@@ -1,6 +1,6 @@
 {
   "name": "nerve",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Push Codex / Claude-compatible agent lifecycle into the Nerve menu-bar status hub over local HTTP ingest.",
   "author": {
     "name": "Nerve",

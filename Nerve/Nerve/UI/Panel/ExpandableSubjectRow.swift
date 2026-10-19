@@ -264,18 +264,7 @@ struct ExpandableSubjectRow: View {
         }
     }
 
-    private var activityText: String {
-        let busy = ["subagent", "tool", "thinking", "info"]
-            .contains(subject.current?.type.lowercased() ?? "")
-        if !busy,
-           subject.attention.level >= .suggested,
-           let title = subject.attention.title, !title.isEmpty {
-            return title
-        }
-        if let s = subject.current?.summary, !s.isEmpty { return s }
-        if let n = subject.current?.name, !n.isEmpty { return n }
-        return ""
-    }
+    private var activityText: String { subject.display?.activity ?? "" }
 
     @ViewBuilder
     private var rowSelectionBackground: some View {

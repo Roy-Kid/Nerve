@@ -14,19 +14,21 @@ The surface refresh button asks the hub to reap dead local PIDs, expire pending,
 <!-- mol:note:topic:debug-logs -->
 ## 2026-09-18 — Debug logs: tracing + Unified Logging + VS Code channel
 
-Hub and Rust surfaces use `tracing` (stderr + daily file under the OS log dir; `RUST_LOG` / `nerve-hub serve --verbose`). macOS app and Tether use `os.Logger` (`app.nerve.Nerve` / `app.nerve.tether`). VS Code uses a log OutputChannel named Nerve. No prompt bodies. Spawners still discard hub stdio — the hub writes its own file.
+Hub and Rust surfaces use `tracing` (stderr + daily file under the OS log dir; `RUST_LOG` / `nerve-hub serve --verbose`). macOS app uses `os.Logger` (`app.nerve.Nerve`). VS Code uses a log OutputChannel named Nerve. No prompt bodies. Spawners still discard hub stdio — the hub writes its own file.
 
 <!-- mol:note:topic:grok-loopback-ssrf -->
 ## 2026-09-18 — Grok `type: http` cannot reach the hub
 
 Grok's HTTP hook runner refuses loopback and non-HTTPS URLs (SSRF). `http://127.0.0.1:17890/v1/hook` is dropped fail-open, so a plugin that only registers `type: http` never updates Nerve. Grok hooks are `command` → `hooks/grok-post.js` POSTing the same body. Hub mapping is unchanged.
 
-<!-- mol:note:topic:tether-surface -->
-## 2026-09-18 — Tether plugin, one hub, notify lease
+<!-- mol:note:topic:notify-lease -->
+## 2026-09-18 — One hub, notify lease (Tether surface removed 2026-09-29)
 
-Tether (`~/work/Tether`) is a compile-time Swift plugin host. Nerve’s surface lives in `surfaces/tether` and is registered in Tether’s composition root. It probes `/v1/health` before spawn, same as every other surface; 17890 remains the lock. A second `nerve-hub serve` that loses the bind already exits `AlreadyRunning`.
+Every surface probes `/v1/health` before spawning; 17890 remains the lock. A second `nerve-hub serve` that loses the bind exits `AlreadyRunning`.
 
-Notifications: the hub never talks to UserNotifications. It now names SSE connections (`?surface=`), publishes `notify` on every frame (`policy` `single`|`all`, elected `owner`, `surfaces`, `watchers`), and accepts `GET`/`PUT /v1/notify`. Default `single` prefers macos → tether → windows → vscode → tmux so Nerve.app and Tether do not both banner. Missing `notify` (old hub) still means everyone fires. Presence 0→1 does not republish (the connect frame is enough); 1→2 and drops do, so the remaining owner learns.
+Notifications: the hub never talks to UserNotifications. It names SSE connections (`?surface=`), publishes `notify` on every frame (`policy` `single`|`all`, elected `owner`, `surfaces`, `watchers`), and accepts `GET`/`PUT /v1/notify`. Default `single` prefers macos → windows → vscode → tmux so two surfaces on one machine do not both banner. Missing `notify` (old hub) still means everyone fires. Presence 0→1 does not republish (the connect frame is enough); 1→2 and drops do, so the remaining owner learns.
+
+Tether no longer hosts Nerve: `surfaces/tether` is deleted and `tether` left the preference order. The uncommitted work that made the app's views hostable (`surfaces/macos`, public `AppModel`/`JobStore`/panel inits) is in `git stash` "Tether surface work".
 
 <!-- mol:note:topic:windows-surface -->
 
@@ -384,6 +386,4 @@ Why: `nerve.js` `mapEvent`, `nerve.py` `_map_event` and hub `map::map_event` had
 
 **Rule**: `crates/nerve-surface-core/src/frame.rs` `JobExtensions` gained `model`, `agent_type`, `slot` (additive; unknown keys were already ignored). The hub kept them in its open map the whole time — the drop happened at surface decode, which is why no surface could show a model name.
 
-**Rule**: Tether paints the macOS words and hexes. `NerveHubClient` now owns `NerveStatus` (the seven-class ladder + `statusLabel` with the reason-specific "Approval needed" / "Input needed" / "Review needed" / "Decision needed") and `NervePalette` (six `UInt32` hexes transcribed once from `palette.rs:48-59`, Waiting = Inactive gray). `NerveJob` decodes `health`/`outcome`/`extensions`/`location.focusHint` and derives `status` the way `Subject.status` does, busy-kind skip included. The row shows the status word beside the dot, `alias · model` as metadata, and a display-only Open button on `location.openURL`; the inspector's "Now" section has a Prompt block that reads `extensions.lastPrompt` and never falls back to `current.summary`. `JobDecodingTests.swift` pins the words and the six hex values.
-
-**Rule**: `index/src/docs/content.ts` is the only public handbook (invariant 8). The PostCompact-no-bg row said `idle · attention.reason=input` / Attention and was wrong — it is `thinking · "Context compacted — continuing"` / Running. Both the EN and ZH blocks are corrected, the eight new event rows are added, `open_logs` is documented beside Open/Focus/Copy, the extension keys and the empty-string filter are listed, and `/docs/status` now carries the reason-specific status words plus a note that Tether shares them and the hexes.
+**Rule**: `index/src/docs/content.ts` is the only public handbook (invariant 8). The PostCompact-no-bg row said `idle · attention.reason=input` / Attention and was wrong — it is `thinking · "Context compacted — continuing"` / Running. Both the EN and ZH blocks are corrected, the eight new event rows are added, `open_logs` is documented beside Open/Focus/Copy, the extension keys and the empty-string filter are listed, and `/docs/status` now carries the reason-specific status words.

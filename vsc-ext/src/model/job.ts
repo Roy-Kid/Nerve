@@ -129,18 +129,18 @@ export interface NotifyLease {
 }
 
 /** Older hub omitted `notify`; every surface may fire. */
-export const LEGACY_NOTIFY: NotifyLease = {
-  policy: "all",
+export const EMPTY_NOTIFY: NotifyLease = {
+  policy: "single",
   surfaces: [],
   watchers: 0,
 };
 
-export function mayInterrupt(lease: NotifyLease, surface: string): boolean {
-  if (lease.policy === "all") return true;
-  return lease.owner === surface;
-}
-
+export interface HubNotification { id: string; target: string; jobId: string; title: string; body: string; level: string; sound: boolean }
 export interface Frame {
+  hubInstanceId?:string;
+  revision?:number;
+  notifications?: HubNotification[];
+  summary?: Record<string, unknown>;
   jobs: Job[];
   departed: Job[];
   notify: NotifyLease;
@@ -294,7 +294,7 @@ export function parseJob(value: unknown): Job | undefined {
         : enumValue(outcomeRaw, OUTCOMES, "unknown"),
     producer: parseProducer(record.producer),
     context: parseContext(record.context),
-    extensions: parseExtensions(record.extensions),
+    extensions: { ...parseExtensions(record.extensions), hub: record.display },
     location: parseLocation(record.location),
     actions: parseActions(record.actions),
     createdAt: asString(record.createdAt),
@@ -308,6 +308,7 @@ export function parseFrame(raw: string): Frame {
   if (!record) {
     throw new Error("frame is not an object");
   }
+  if (record.protocolVersion !== 2) throw new Error("Upgrade Nerve hub: protocol version 2 required");
   const jobs = Array.isArray(record.jobs)
     ? record.jobs.map(parseJob).filter((job): job is Job => job !== undefined)
     : [];
@@ -316,13 +317,16 @@ export function parseFrame(raw: string): Frame {
         .map(parseJob)
         .filter((job): job is Job => job !== undefined)
     : [];
-  return { jobs, departed, notify: parseNotify(record.notify) };
+  return {hubInstanceId:asString(record.hubInstanceId),revision:typeof record.revision==="number"?record.revision:0, jobs, departed, notify: parseNotify(record.notify), notifications: Array.isArray(record.notifications) ? record.notifications as HubNotification[] : [], summary: asRecord(record.summary) ?? {} };
 }
 
 function parseNotify(value: unknown): NotifyLease {
   const record = asRecord(value);
-  if (!record) return LEGACY_NOTIFY;
-  const policy: NotifyPolicy = record.policy === "single" ? "single" : "all";
+  if (!record) return EMPTY_NOTIFY;
+  const raw = typeof record.policy === "string" ? record.policy.trim().toLowerCase() : "";
+  // Missing or unknown policy on a present object is single, the hub default.
+  // A missing object also uses the hub default.
+  const policy: NotifyPolicy = raw === "all" ? "all" : "single";
   const owner = asString(record.owner);
   const surfaces = Array.isArray(record.surfaces)
     ? record.surfaces.filter((item): item is string => typeof item === "string")
@@ -366,21 +370,10 @@ export function lastPrompt(job: Job): string | undefined {
   return extensionString(job, "lastPrompt");
 }
 
-export function extensionRole(job: Job): string | undefined {
-  return extensionString(job, "role")?.toLowerCase();
-}
-
-export function isGroupJob(job: Job): boolean {
-  return extensionRole(job) === "group";
-}
-
-export function isMemberJob(job: Job): boolean {
-  return extensionRole(job) === "member";
-}
-
-export function groupId(job: Job): string | undefined {
-  return extensionString(job, "groupId") ?? extensionString(job, "parentJobId");
-}
+export function extensionRole(job: Job): string | undefined { return (job.extensions.hub as {role?:string}|undefined)?.role; }
+export function isGroupJob(job: Job): boolean { return extensionRole(job) === "group"; }
+export function isMemberJob(job: Job): boolean { return extensionRole(job) === "member"; }
+export function groupId(job: Job): string | undefined { return (job.extensions.hub as {groupId?:string}|undefined)?.groupId; }
 
 export function jobWorkspace(job: Job): string | undefined {
   return (

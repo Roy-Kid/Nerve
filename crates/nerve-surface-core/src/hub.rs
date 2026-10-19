@@ -28,6 +28,7 @@ use std::time::Duration;
 use eventsource_stream::{EventStream, Eventsource};
 use futures_util::stream::{Stream, StreamExt};
 use reqwest::Client;
+pub use reqwest::Method as HttpMethod;
 use tokio::runtime::{Builder, Runtime};
 
 /// The one ingest port, shared by every producer and every surface.
@@ -168,6 +169,30 @@ impl Hub {
     ///
     /// Holding the returned stream open is what keeps the connection — and
     /// therefore the hub's refcount — alive.
+    pub fn send_json(
+        &self,
+        path: &str,
+        method: reqwest::Method,
+        value: &serde_json::Value,
+    ) -> Result<(), HubError> {
+        let t = self.transport()?;
+        let url = format!("{}{path}", self.base);
+        t.runtime.block_on(async {
+            let response = t
+                .client
+                .request(method, url)
+                .header("Content-Type", "application/json")
+                .body(value.to_string())
+                .timeout(REQUEST_TIMEOUT)
+                .send()
+                .await?;
+            if !response.status().is_success() {
+                return Err(HubError::Status(response.status().as_u16()));
+            }
+            Ok(())
+        })
+    }
+
     pub fn open(&self, path: &str) -> Result<HubEvents, HubError> {
         let transport = Arc::clone(self.transport()?);
         let url = format!("{}{path}", self.base);

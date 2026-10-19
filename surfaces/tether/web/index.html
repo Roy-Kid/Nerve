@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Nerve</title>
+  <link rel="stylesheet" href="panel.css">
+  <script src="model.js" defer></script>
+  <script src="panel.js" defer></script>
+</head>
+<body>
+  <header>
+    <span class="name">Nerve</span>
+    <span id="connection" class="dot connection" data-status="waiting" role="status" aria-label="Connecting to Nerve hub" title="Connecting to Nerve hub"></span>
+    <nav id="filters" aria-label="Filter jobs"></nav>
+    <button id="search-toggle" class="icon-button" aria-label="Search jobs" title="Search jobs · ⌘/Ctrl F" aria-expanded="false" aria-controls="search-box">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25"/><path d="m10.25 10.25 3 3"/></svg>
+    </button>
+    <button id="retry" class="icon-button" aria-label="Reconnect to Nerve hub" title="Reconnect to Nerve hub" hidden>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.5 6A5 5 0 1 0 13 9M12.5 2.5V6H9"/></svg>
+    </button>
+  </header>
+  <div id="search-box" hidden>
+    <input id="search" type="search" aria-label="Search jobs" autocomplete="off" spellcheck="false">
+  </div>
+  <main id="jobs" aria-label="Agent jobs"></main>
+  <div id="empty" class="empty" role="status" aria-label="Connecting to Nerve hub" title="Connecting to Nerve hub"><span class="dot" data-status="waiting" aria-hidden="true"></span></div>
+</body>
+</html>

@@ -16,8 +16,6 @@
 //! nothing: there is no tmux left to write to.
 //! ─────────────────────────────────────────────────────────────────────────
 
-use nerve_surface_core::tally::Tally;
-
 // Re-exported while the extraction lands, so `crate::stream::Backoff` and
 // `nerve_tmux_surface::stream::FrameSource` keep resolving in `store.rs` and
 // `tests/stream.rs`. Removed with the rest of the facade.
@@ -71,7 +69,7 @@ impl<S: FrameSource, W: SegmentWriter> StreamSession<S, W> {
             match self.source.next_frame() {
                 Ok(Some(frame)) => {
                     frames += 1;
-                    let text = self.summary.render(&Tally::of(&frame.jobs));
+                    let text = self.summary.render(&frame.summary.tally());
                     if self.paint(&text) {
                         return Attempt::ServerGone;
                     }

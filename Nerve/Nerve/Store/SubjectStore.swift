@@ -40,6 +40,7 @@ final class JobStore {
     ///
     /// Sorted here is what lets every reader below filter and stop: a filter
     /// keeps order, so a section carved out of this list is already in it.
+    var summary: HubSummary = .init()
     private(set) var conversationJobs: [Job] = []
 
     /// The open half of ``conversationJobs`` — the only jobs a surface paints.
@@ -48,19 +49,21 @@ final class JobStore {
     /// Dormant: the producer action queue lives in the hub and no surface path
     /// fills this yet. Kept exposed so the panel's observation surface is stable.
     private(set) var pendingActions: [PendingActionRequest] = []
-    /// Hub-elected notify lease. Older hubs leave this as ``NotifyLease/legacy``.
-    private(set) var notify: NotifyLease = .legacy
+    /// Read-only hub notification policy metadata.
+    private(set) var notify: NotifyLease = .empty
 
     private let clock: () -> Date
 
     var panelOpen: Bool = false
     var selectedJobId: String?
     var lastError: String?
+    var hubError: String?
     var connectionAvailable = false
     var lastReceivedAt: Date?
     var hasSeenJobs = false
 
     func receivedHubData() {
+        hubError = nil
         connectionAvailable = true
         lastReceivedAt = clock()
     }
@@ -78,7 +81,7 @@ final class JobStore {
 
     /// Set by AppModel after construction. Driven by `HubClient` once per
     /// changed job, from the `(previous, next)` pairs `FrameDiffer` recovers.
-    var notificationSink: ((Job?, Job) -> Void)?
+    var notificationSink: ((HubNotification) -> Void)?
     /// Fired after any state change that should refresh the ribbon.
     var ribbonInvalidationSink: (() -> Void)?
     var settingsProvider: (() -> SettingsStore)?
@@ -103,7 +106,7 @@ final class JobStore {
     var activeJobs: [Job] { openJobs }
 
     /// Open conversation jobs only (legacy subagent child rows excluded).
-    var activeCount: Int { openJobs.count }
+    var activeCount: Int { summary.total }
 
     /// Jobs that may paint the ribbon (respects Settings.ribbonRootsOnly).
     private func ribbonEligibleJobs() -> [Job] {
@@ -153,27 +156,17 @@ final class JobStore {
 
     /// Open jobs with `status == .running`. Same number the ribbon/panel paint blue.
     var runningCount: Int {
-        countOpen(where: { $0.status == .running })
+        summary.counts["running"] ?? 0
     }
 
     /// Open jobs needing human attention.
     var attentionCount: Int {
-        countOpen(where: { $0.status == .attention })
+        summary.counts["attention"] ?? 0
     }
 
     private func countOpen(where pred: (Job) -> Bool) -> Int {
         openJobs.reduce(into: 0) { n, job in
             if pred(job) { n += 1 }
-        }
-    }
-
-    /// Priority-mode bucket for a status (Attention / Active / Recent). View grouping only.
-    /// Open completed turns go into Recent; SessionEnd still removes the row.
-    private func priorityGroup(for status: Status) -> PanelGroup {
-        switch status {
-        case .problem, .attention: return .attention
-        case .success: return .recent
-        case .running, .monitor, .inactive, .waiting: return .active
         }
     }
 
@@ -222,7 +215,7 @@ final class JobStore {
 
     /// Priority sections — bucketed only by `Job.status` (no second ruleset).
     func jobsInPriorityGroup(_ group: PanelGroup) -> [Job] {
-        panelListJobs().filter { priorityGroup(for: $0.status) == group }
+        panelListJobs().filter { $0.display?.section == group.rawValue }
     }
 
     /// Open jobs eligible for the status list (member visibility from Settings).
@@ -246,12 +239,12 @@ final class JobStore {
         let list = panelListJobs()
         var buckets: [String: [Job]] = [:]
         for s in list {
-            let key = s.alias.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = s.display?.machineGroup ?? "unknown"
             buckets[key.isEmpty ? "unknown" : key, default: []].append(s)
         }
         return buckets
             .map { key, items in
-                StatusSection(id: "machine:\(key)", title: key, jobs: items)
+                StatusSection(id: "machine:\(key)", title: items.first?.display?.machineLabel ?? "unknown", jobs: items)
             }
             .sorted { a, b in
                 a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
@@ -270,19 +263,7 @@ final class JobStore {
     /// Applied once, in ``rederive()``. Every section below inherits it by
     /// filtering rather than re-sorting.
     private func sortComparator(_ a: Job, _ b: Job) -> Bool {
-        if a.status != b.status { return a.status < b.status }
-        if a.attention.level != b.attention.level {
-            return a.attention.level > b.attention.level
-        }
-        if a.health.severity != b.health.severity {
-            return a.health.severity > b.health.severity
-        }
-        let aFail = a.outcome == .failure
-        let bFail = b.outcome == .failure
-        if aFail != bFail { return aFail && !bFail }
-        // Frequent tool events must not shuffle peers under the pointer.
-        if a.createdAt != b.createdAt { return a.createdAt > b.createdAt }
-        return a.id < b.id
+        (a.display?.order ?? 0) < (b.display?.order ?? 0)
     }
 
     // MARK: - Ribbon segments
@@ -428,19 +409,25 @@ final class JobStore {
     /// That is what makes a dropped connection cost nothing — the next frame
     /// after a reconnect restores the surface completely.
     ///
-    /// `ensureLocalActions` runs per job here, the way `commit` used to run it
-    /// per write: the hub stores the producer's raw actions and the NSWorkspace
-    /// Open/Focus semantics stay on this side.
+    /// Replace the authoritative snapshot without changing jobs.
     func applyFrame(
         jobs incoming: [Job],
         timelines incomingTimelines: [String: [TimelineEntry]],
-        notify incomingNotify: NotifyLease = .legacy
+        notify incomingNotify: NotifyLease = .empty
     ) {
         var next: [String: Job] = [:]
         next.reserveCapacity(incoming.count)
         for job in incoming {
-            let stored = ensureLocalActions(job)
-            next[stored.id] = stored
+            next[job.id] = job
+        }
+        // A selected id missing from this frame is a change even when the
+        // dictionaries otherwise match: the panel must collapse that row.
+        let selectionLeaves = selectedJobId.map { next[$0] == nil } ?? false
+        if jobs == next,
+           timelines == incomingTimelines,
+           notify == incomingNotify,
+           !selectionLeaves {
+            return
         }
         jobs = next
         rederive()
@@ -461,60 +448,7 @@ final class JobStore {
         conversationJobs = jobs.values
             .filter(\.isConversationJob)
             .sorted(by: sortComparator)
-        openJobs = conversationJobs.filter { $0.lifecycle != .ended }
-    }
-
-    /// Display-only actions: strip remote control; **Open/Focus first**, then Copy.
-    /// Rows leave via SessionEnd / slot supersede / PID reap — no manual Dismiss.
-    private func ensureLocalActions(_ job: Job) -> Job {
-        guard job.isConversationJob, job.lifecycle != .ended else { return job }
-        var j = job
-        // Nerve is status display only — never surface reverse-control actions.
-        j.actions = j.actions.filter { ActionService.isDisplayAction($0) }
-        // Hide dismiss even if a producer still sends it (legacy snapshots).
-        j.actions = j.actions.filter {
-            let k = $0.kind.lowercased()
-            return k != "dismiss" && k != "dismiss_job" && k != "dismissjob"
-        }
-
-        // Primary: Open (has openURL) or Focus (focusHint only).
-        let hasOpenAction = j.actions.contains { ActionService.isOpenKind($0.kind) }
-        if ActionService.canFocus(j), !hasOpenAction {
-            let title = ActionService.focusActionTitle(for: j)
-            let kind = (j.location?.openURL?.isEmpty == false) ? "open" : "focus"
-            j.actions.insert(
-                JobAction(id: "open", title: title, kind: kind),
-                at: 0
-            )
-        } else if hasOpenAction {
-            // Normalize title + pin Open/Focus to the front.
-            if let idx = j.actions.firstIndex(where: { ActionService.isOpenKind($0.kind) }) {
-                var action = j.actions.remove(at: idx)
-                if ActionService.canFocus(j) {
-                    action.title = ActionService.focusActionTitle(for: j)
-                    if j.location?.openURL?.isEmpty == false {
-                        action.kind = "open"
-                    } else if action.kind.lowercased() != "focus" {
-                        action.kind = "focus"
-                    }
-                }
-                j.actions.insert(action, at: 0)
-            }
-        }
-
-        if !j.actions.contains(where: {
-            let k = $0.kind.lowercased()
-            return k == "copy_summary" || k == "copy"
-        }) {
-            // After Open when present.
-            let insertAt = j.actions.firstIndex(where: { ActionService.isOpenKind($0.kind) })
-                .map { $0 + 1 } ?? 0
-            j.actions.insert(
-                JobAction(id: "copy", title: "Copy", kind: "copy_summary"),
-                at: min(insertAt, j.actions.count)
-            )
-        }
-        return j
+        openJobs = conversationJobs
     }
 
     // MARK: - Actions

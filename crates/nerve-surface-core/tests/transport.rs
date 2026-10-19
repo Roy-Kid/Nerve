@@ -25,8 +25,6 @@ use time::macros::datetime;
 use tokio::net::TcpListener;
 use tower::ServiceExt;
 
-const LONG_GRACE: Duration = Duration::from_secs(3_600);
-
 /// Never reaps: these tests are about the wire, not the reaper.
 struct EveryPidAlive;
 
@@ -38,10 +36,11 @@ impl PidProbe for EveryPidAlive {
 
 fn runtime() -> HubRuntime {
     let clock = Arc::new(FakeClock::new(datetime!(2026-07-19 00:00:00 UTC)));
-    HubRuntime::new(
-        JobStore::new(clock, "test-mac".to_string(), Arc::new(EveryPidAlive)),
-        LONG_GRACE,
-    )
+    HubRuntime::new(JobStore::new(
+        clock,
+        "test-mac".to_string(),
+        Arc::new(EveryPidAlive),
+    ))
 }
 
 /// Serve on an ephemeral loopback port.

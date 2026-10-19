@@ -98,6 +98,9 @@ impl AppState {
         &self.snapshot.jobs
     }
 
+    pub fn hub_error(&self) -> Option<&str> {
+        self.snapshot.error.as_deref()
+    }
     pub fn offline(&self) -> bool {
         self.snapshot.offline
     }
@@ -418,7 +421,7 @@ mod panel_tests {
 
     fn state_with(jobs: serde_json::Value) -> AppState {
         let store = JobsStore::new();
-        store.set_jobs(serde_json::from_value(jobs).expect("job fixtures"));
+        store.set_jobs(nerve_surface_core::testkit::jobs(jobs));
         let mut state = AppState::with_preview(store, 8, PanePreview::detached());
         state.set_viewport(30, 24);
         state.refresh_from_hub();
@@ -429,7 +432,7 @@ mod panel_tests {
     fn arrive(state: &mut AppState, jobs: serde_json::Value) {
         state
             .store
-            .set_jobs(serde_json::from_value(jobs).expect("job fixtures"));
+            .set_jobs(nerve_surface_core::testkit::jobs(jobs));
         state.refresh_from_hub();
     }
 
@@ -563,12 +566,11 @@ mod panel_tests {
 
     #[test]
     fn the_cursor_finds_the_job_running_on_a_pane() {
-        let jobs: Vec<JobView> = serde_json::from_value(serde_json::json!([
+        let jobs: Vec<JobView> = nerve_surface_core::testkit::jobs(serde_json::json!([
             { "id": "claude-code:s1", "extensions": { "pid": 4242 } },
             { "id": "codex:s2", "extensions": { "pid": 77 } },
             { "id": "claude-code:s3" },
-        ]))
-        .expect("job fixtures");
+        ]));
 
         // A pane runs a shell, the agent, and whatever the agent spawned.
         assert_eq!(

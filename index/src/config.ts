@@ -1,3 +1,4 @@
+import hubFixture from '../../fixtures/website-frame.json';
 import type { Locale } from './i18n/messages';
 
 /** Product links and copy — edit when URLs change. */
@@ -28,24 +29,12 @@ export function getTmuxGuidePath(_locale?: Locale) {
   return site.tmux;
 }
 
-/**
- * Mock jobs for every ribbon and screenshot.
- *
- * Chromatic order follows the colour wheel (red → orange → green → blue →
- * violet) so RGB blends between neighbours stay saturated. Gray idle sits
- * last, at half weight, so it never appears inside a colour-to-colour ramp.
- */
-export const jobs = [
-  { id: 'deploy', label: 'deploy edge', status: 'problem' as const, alias: 'edge' },
-  { id: 'codex', label: 'Codex · refactor', status: 'attention' as const, alias: 'gpu-box' },
-  { id: 'build', label: 'xcodebuild Nerve', status: 'success' as const, alias: 'studio' },
-  { id: 'claude', label: 'Claude Code', status: 'running' as const, alias: 'studio' },
-  { id: 'stream', label: 'build log', status: 'monitor' as const, alias: 'ci' },
-  { id: 'watch', label: 'Local watcher', status: 'inactive' as const, alias: 'ci' },
-] as const;
-
-export type JobStatus = (typeof jobs)[number]['status'];
-export type StatusTone = JobStatus;
+/** Examples consume a hub-generated protocol fixture; colours are presentation. */
+export type StatusTone = 'problem' | 'attention' | 'running' | 'monitor' | 'success' | 'inactive';
+export type JobStatus = StatusTone;
+export const jobs = hubFixture.jobs.map(job => ({
+  id:job.id, label:job.name, alias:job.alias, status:job.display.status as StatusTone,
+}));
 
 /** Idle is a rest, not a hue — half the width of every painted status. */
 export function ribbonWeight(status: StatusTone): number {
@@ -57,12 +46,12 @@ export const statusMeta: Record<
   StatusTone,
   { label: string; color: string; hint: string }
 > = {
-  problem: { label: 'Problem', color: '#ff3b30', hint: 'Failed / cannot continue' },
-  attention: { label: 'Attention', color: '#ff9f0a', hint: 'Needs you, or stuck' },
-  running: { label: 'Running', color: '#0a84ff', hint: 'In flight' },
-  monitor: { label: 'Monitor', color: '#bf5af2', hint: 'Watching a background stream' },
-  success: { label: 'Success', color: '#30d158', hint: 'Finished' },
-  inactive: { label: 'Inactive', color: '#8e8e93', hint: 'Ready / quiet' },
+  problem: { label: 'Problem', color: 'var(--color-status-problem)', hint: 'Failed / cannot continue' },
+  attention: { label: 'Needs you', color: 'var(--color-status-attention)', hint: 'Needs you, or stuck' },
+  running: { label: 'Running', color: 'var(--color-status-running)', hint: 'In flight' },
+  monitor: { label: 'Monitor', color: 'var(--color-status-monitor)', hint: 'Watching a background stream' },
+  success: { label: 'Completed', color: 'var(--color-status-success)', hint: 'Finished' },
+  inactive: { label: 'Ready / idle', color: 'var(--color-status-inactive)', hint: 'Ready / quiet' },
 };
 
 export const truths = [

@@ -65,9 +65,9 @@ export function TmuxSidebarPreview({
         )}
         aria-hidden="true"
       >
-        <span className={cn('rounded-full bg-[#ff5f57]', hero ? 'size-2.5' : 'size-[7px]')} />
-        <span className={cn('rounded-full bg-[#febc2e]', hero ? 'size-2.5' : 'size-[7px]')} />
-        <span className={cn('rounded-full bg-[#28c840]', hero ? 'size-2.5' : 'size-[7px]')} />
+        <span className={cn('rounded-full bg-traffic-red', hero ? 'size-2.5' : 'size-[7px]')} />
+        <span className={cn('rounded-full bg-traffic-amber', hero ? 'size-2.5' : 'size-[7px]')} />
+        <span className={cn('rounded-full bg-traffic-green', hero ? 'size-2.5' : 'size-[7px]')} />
         <span className="ml-1">nerve</span>
         <span className="opacity-50">— tmux</span>
       </div>
@@ -150,7 +150,7 @@ export function TmuxSidebarPreview({
           <p className="m-0 mt-1">
             <span className="text-[#30d158]">❯</span> claude
           </p>
-          <p className="m-0 mt-2 text-[#ff9f0a]">{t.preview.status.attention}</p>
+          <p className="m-0 mt-2 text-status-attention">{t.preview.status.attention}</p>
           <p className="m-0 mt-1 text-[#d0d0d0]">{selected.name}</p>
           <p className="m-0 mt-1 text-[#636366]">{selected.detail}</p>
         </div>

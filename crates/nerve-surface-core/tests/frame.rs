@@ -314,3 +314,62 @@ fn test_frame_error_explains_itself() {
         "FrameError must Display the reason"
     );
 }
+
+#[test]
+fn job_extensions_keep_role_group_and_ribbon() {
+    let decoded = job(serde_json::json!({
+        "id": "j",
+        "extensions": {
+            "role": "member",
+            "groupId": "g1",
+            "parentJobId": "parent",
+            "paintRibbon": false,
+            "mystery": 1
+        }
+    }));
+
+    assert_eq!(decoded.extensions.role.as_deref(), Some("member"));
+    assert_eq!(decoded.extensions.group_id.as_deref(), Some("g1"));
+    assert_eq!(decoded.extensions.parent_job_id.as_deref(), Some("parent"));
+    assert_eq!(decoded.extensions.paint_ribbon, Some(false));
+}
+
+#[test]
+fn a_missing_notify_object_is_observation_only() {
+    let decoded = frame(r#"{"jobs":[]}"#);
+    assert_eq!(
+        decoded.notify.policy,
+        nerve_surface_core::notify::NotifyPolicy::Single
+    );
+}
+
+#[test]
+fn a_present_notify_object_without_a_policy_is_single() {
+    let decoded = frame(r#"{"jobs":[],"notify":{"owner":"macos"}}"#);
+    assert_eq!(decoded.notify.owner.as_deref(), Some("macos"));
+}
+
+#[test]
+fn an_unknown_notify_policy_on_a_frame_is_single() {
+    let decoded = frame(r#"{"notify":{"policy":"nope","owner":"windows"}}"#);
+    assert_eq!(
+        decoded.notify.policy,
+        nerve_surface_core::notify::NotifyPolicy::Single
+    );
+}
+
+#[test]
+fn incompatible_protocol_and_unprojected_jobs_require_upgrade() {
+    assert!(
+        Frame::decode(r#"{"jobs":[]}"#)
+            .unwrap_err()
+            .to_string()
+            .contains("Upgrade")
+    );
+    assert!(
+        Frame::decode_jobs_list(r#"[{"id":"legacy"}]"#)
+            .unwrap_err()
+            .to_string()
+            .contains("Upgrade")
+    );
+}

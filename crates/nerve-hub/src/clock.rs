@@ -2,7 +2,7 @@
 //!
 //! Every part of the hub that needs "now" takes a `&dyn Clock` instead of
 //! calling the OS, so state-machine tests (version ordering, pending TTL,
-//! reaper min-age, grace timers) stay deterministic.
+//! reaper min-age) stay deterministic.
 
 use std::sync::Mutex;
 use std::time::Duration;

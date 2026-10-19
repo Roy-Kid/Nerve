@@ -33,7 +33,7 @@ impl WireTime {
         self.0
     }
 
-    /// This instant moved forward by `secs` (TTL and grace arithmetic).
+    /// This instant moved forward by `secs` (TTL arithmetic).
     pub fn plus_seconds(self, secs: i64) -> Self {
         Self::new(self.0.saturating_add(Duration::seconds(secs)))
     }

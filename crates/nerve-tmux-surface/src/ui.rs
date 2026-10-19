@@ -76,7 +76,7 @@ fn draw_job_list(frame: &mut Frame, area: Rect, state: &AppState) {
     if sections.is_empty() {
         lines.push(Line::from(Span::styled(
             if state.offline() {
-                "offline"
+                state.hub_error().unwrap_or("offline")
             } else {
                 "no jobs"
             },
@@ -264,13 +264,5 @@ fn status_filter_color(filter: StatusFilter) -> u8 {
 }
 
 fn status_color(class: StatusClass) -> u8 {
-    match class {
-        StatusClass::Problem => colors::PROBLEM,
-        StatusClass::Attention => colors::ATTENTION,
-        StatusClass::Waiting => colors::WAITING,
-        StatusClass::Running => colors::RUNNING,
-        StatusClass::Monitor => colors::MONITOR,
-        StatusClass::Success => colors::SUCCESS,
-        StatusClass::Inactive => colors::IDLE,
-    }
+    colors::of(class)
 }

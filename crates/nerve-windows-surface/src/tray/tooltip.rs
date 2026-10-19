@@ -53,11 +53,19 @@ fn counts(tally: &Tally) -> String {
         return "nothing running".to_string();
     }
     let mut parts = Vec::new();
-    let busy = tally.running + tally.monitor;
+    let busy = tally.running_count();
     if busy > 0 {
         parts.push(format!("{busy} running"));
     }
-    let needs = tally.problem + tally.attention + tally.waiting;
+    if tally.problem > 0 {
+        let word = if tally.problem == 1 {
+            "problem"
+        } else {
+            "problems"
+        };
+        parts.push(format!("{} {word}", tally.problem));
+    }
+    let needs = tally.needs_you();
     if needs > 0 {
         parts.push(format!("{needs} needs you"));
     }

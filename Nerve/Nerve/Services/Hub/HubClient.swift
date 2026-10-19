@@ -1,16 +1,7 @@
 import Foundation
+import UserNotifications
 
-/// The macOS surface's link to `nerve-hub`.
-///
-/// Consumes the SSE frame stream, recovers `(previous, next)` job pairs with
-/// ``FrameDiffer``, writes the frame into ``JobStore`` and only then hands each
-/// pair to the store's `notificationSink` — write first, notify after, the same
-/// order the in-process store used when it owned state.
-///
-/// Knows a store and an endpoint and nothing else: no view, no settings, no
-/// process management. When the stream drops it reports that through
-/// ``onStreamEnded`` and keeps retrying; whether a hub needs starting again is
-/// somebody else's judgement (`HubProcessManager`), not this client's.
+/// Consumes authoritative hub frames and executes notifications addressed to this instance.
 @MainActor
 final class HubClient {
     /// First reconnect wait, and the floor every successful attach resets to.
@@ -19,8 +10,8 @@ final class HubClient {
     private static let maxRetryDelay: TimeInterval = 30
     /// One-shot `GET /v1/jobs` — not the long-lived stream timeout.
     private static let jobsFetchTimeout: TimeInterval = 5
-    /// While SSE is up, re-pull `/v1/jobs` on this interval. A hung URLSession
-    /// stream still looks ESTABLISHED; without this the panel stays empty.
+    /// Hung-SSE probe. While decoded frames keep arriving the poll does not
+    /// GET; a stream that delivers nothing for this long re-pulls `/v1/jobs`.
     private static let jobsPollInterval: TimeInterval = 3
 
     /// `?surface=` is a log tag on the hub side — every surface sees every frame.
@@ -31,7 +22,7 @@ final class HubClient {
         ) else {
             return NerveEndpoint.stream
         }
-        components.queryItems = [URLQueryItem(name: "surface", value: "macos")]
+        components.queryItems = [URLQueryItem(name: "surface", value: "macos"), URLQueryItem(name: "instanceId", value: instanceId), URLQueryItem(name: "notifications", value: "true")]
         return components.url ?? NerveEndpoint.stream
     }()
 
@@ -50,10 +41,13 @@ final class HubClient {
     /// reason a hub comes back.
     var onStreamEnded: (() -> Void)?
 
-    private var differ = FrameDiffer()
+    static let instanceId = UUID().uuidString
     private var stream: Task<Void, Never>?
     /// Independent of the SSE reader so a hung `bytes.lines` cannot freeze Refresh.
     private var poll: Task<Void, Never>?
+    /// Last SSE `data:` frame that decoded. A GET must not stamp this: one
+    /// refresh would make a hung stream look healthy.
+    private var lastStreamFrameAt: Date = .distantPast
     private var retryDelay: TimeInterval = HubClient.minRetryDelay
 
     init(store: JobStore) {
@@ -83,6 +77,18 @@ final class HubClient {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         self.encoder = encoder
+    }
+
+    func configureNotifications() async {
+        guard let settings = store.settingsProvider?() else { return }
+        let authorization = await UNUserNotificationCenter.current().notificationSettings()
+        let canNotify = authorization.authorizationStatus == .authorized || authorization.authorizationStatus == .provisional
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:17890/v1/clients/\(Self.instanceId)")!)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["enabled": canNotify && !settings.notificationsPaused && (settings.notifyRequired || settings.notifyUrgent || settings.notifyFailure || settings.notifyUnresponsive || settings.notifyLongSuccess),
+            "failure":settings.notifyFailure,"unresponsive":settings.notifyUnresponsive,"longSuccess":settings.notifyLongSuccess,"longSuccessSeconds":settings.longTaskSuccessThresholdSeconds,"ask":settings.notifyRequired,"dndEnabled":settings.dndEnabled,"dndStart":settings.dndStartMinutes,"dndEnd":settings.dndEndMinutes,"utcOffsetMinutes":TimeZone.current.secondsFromGMT()/60,"urgent":settings.notifyUrgent,"sound":settings.notificationSoundEnabled,"mutedSources":Array(settings.mutedSourceIds),"mutedProjects":Array(settings.mutedProjectIds)])
+        _ = try? await shortSession.data(for: request)
     }
 
     // MARK: - Connection
@@ -173,6 +179,7 @@ final class HubClient {
 
     /// One attach, held until the connection drops.
     private func readOneConnection() async throws {
+        await configureNotifications()
         var request = URLRequest(url: Self.streamURL)
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
@@ -221,6 +228,9 @@ final class HubClient {
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(Self.jobsPollInterval))
             guard !Task.isCancelled else { return }
+            guard Date().timeIntervalSince(lastStreamFrameAt) >= Self.jobsPollInterval else {
+                continue
+            }
             await syncFromHub()
         }
     }
@@ -233,42 +243,29 @@ final class HubClient {
         } catch {
             // One unreadable frame is not worth dropping the connection over:
             // the next frame is a full snapshot and restores everything.
+            store.hubError=String(describing:error)
             NerveLog.record("hub frame ignored (decode failed): \(error)")
             return
         }
+        lastStreamFrameAt = Date()
         NerveLog.record("frame jobs=\(frame.jobs.count) notify=\(frame.notify.owner ?? "-")")
         applyFrame(frame)
     }
 
-    /// `POST /v1/refresh` — hub runs maintenance and answers the job list.
-    /// Falls back to `GET /v1/jobs` on an older hub that does not have the route.
+    /// Request authority maintenance, then read the full projection.
     private func driveHubRefresh() async {
         var request = URLRequest(url: NerveEndpoint.refresh)
         request.httpMethod = "POST"
-        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = Self.jobsFetchTimeout
-        do {
-            let (data, response) = try await shortSession.data(for: request)
-            guard let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-                NerveLog.record("hub refresh HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0); falling back to GET")
-                await syncFromHub()
-                return
-            }
-            var frame = try HubFrame(jobsListJSON: data, decoder: decoder)
-            frame.notify = store.notify
-            NerveLog.record("hub refresh jobs=\(frame.jobs.count)")
-            applyFrame(frame)
-        } catch {
-            NerveLog.record("hub refresh failed: \(error); falling back to GET")
-            await syncFromHub()
-        }
+        _ = try? await shortSession.data(for: request)
+        await syncFromHub()
     }
 
     /// `GET /v1/jobs` before (re)attaching to SSE — paint immediately, not
     /// after the first stream event.
     private func syncFromHub() async {
-        var request = URLRequest(url: NerveEndpoint.jobs)
+        await configureNotifications()
+        var request = URLRequest(url: NerveEndpoint.baseURL.appendingPathComponent("v1/frame"))
         request.httpMethod = "GET"
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = Self.jobsFetchTimeout
@@ -276,32 +273,34 @@ final class HubClient {
             let (data, response) = try await shortSession.data(for: request)
             guard let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode) else {
+                if (response as? HTTPURLResponse)?.statusCode == 404 {store.hubError="Upgrade Nerve hub: protocol version 2 required"}
                 store.hubUnavailable()
                 return
             }
-            var frame = try HubFrame(jobsListJSON: data, decoder: decoder)
-            // `/v1/jobs` is a bare array — it has no notify lease. Keep the
-            // one the stream already elected, or a refresh would look like an
-            // older hub (everyone may banner) until the next SSE frame.
-            frame.notify = store.notify
+            let frame = try decoder.decode(HubFrame.self, from: data)
             if frame.jobs.count != store.activeCount {
                 NerveLog.record("jobs pull \(frame.jobs.count)")
             }
             applyFrame(frame)
         } catch {
+            store.hubError=String(describing:error)
             store.hubUnavailable()
             NerveLog.record("hub jobs fetch failed: \(error)")
         }
     }
 
+    private var lastHubInstance: String?
+    private var lastHubRevision: UInt64 = 0
     private func applyFrame(_ frame: HubFrame) {
+        if lastHubInstance == frame.hubInstanceId && frame.revision < lastHubRevision { return }
+        lastHubInstance = frame.hubInstanceId
+        lastHubRevision = frame.revision
+        store.summary = frame.summary
         store.receivedHubData()
         if !frame.jobs.isEmpty { store.hasSeenJobs = true }
-        let pairs = differ.pairs(for: frame)
         store.applyFrame(jobs: frame.jobs, timelines: frame.timelines, notify: frame.notify)
-        guard frame.notify.mayInterrupt(surface: "macos") else { return }
-        for pair in pairs {
-            store.notificationSink?(pair.previous, pair.next)
+        for event in frame.notifications where event.target == Self.instanceId {
+            store.notificationSink?(event)
         }
     }
 

@@ -7,30 +7,21 @@
 
 use time::OffsetDateTime;
 
-use crate::frame::{AttentionLevel, JobView};
+use crate::frame::JobView;
 
 /// Shown when a cell has nothing to print.
 pub const MISSING: &str = "-";
 
-/// Activity / attention title — mirrored from `StatusPanelView.activityText`.
+/// Activity / attention title — mirrored from `ExpandableSubjectRow.activityText`.
 ///
 /// Borrowed from the job: every row asks for this on every repaint, and the
-/// answer is always a field the job already holds.
+/// answer is always a field the job already holds. A busy turn (tool, shell,
+/// thinking) keeps its own summary; the ask title waits until that turn ends.
 pub fn activity_text(job: &JobView) -> &str {
-    if job.attention.level >= AttentionLevel::Suggested
-        && let Some(title) = job.attention.title.as_deref().filter(|s| !s.is_empty())
-    {
-        return title;
-    }
-    if let Some(current) = &job.current {
-        if let Some(summary) = current.summary.as_deref().filter(|s| !s.is_empty()) {
-            return summary;
-        }
-        if let Some(name) = current.name.as_deref().filter(|s| !s.is_empty()) {
-            return name;
-        }
-    }
-    ""
+    &job.extensions.hub.activity
+}
+pub fn status_label(job: &JobView) -> &str {
+    &job.extensions.hub.status_label
 }
 
 /// What a cell prints, with [`MISSING`] standing in for nothing at all.

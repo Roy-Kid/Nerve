@@ -50,7 +50,7 @@ fn priority(jobs: &[JobView], filter: StatusFilter, now: OffsetDateTime) -> Vec<
     let mut indices: Vec<usize> = jobs
         .iter()
         .enumerate()
-        .filter(|(_, job)| filter.matches(job))
+        .filter(|(_, job)| filter.classified(job).is_some())
         .map(|(index, _)| index)
         .collect();
     if indices.is_empty() {
@@ -65,22 +65,13 @@ fn priority(jobs: &[JobView], filter: StatusFilter, now: OffsetDateTime) -> Vec<
 
 /// One bucket per derived status, in the order the statuses themselves rank.
 fn by_status(jobs: &[JobView], filter: StatusFilter, now: OffsetDateTime) -> Vec<Section> {
-    const ORDER: [StatusClass; 7] = [
-        StatusClass::Problem,
-        StatusClass::Attention,
-        StatusClass::Waiting,
-        StatusClass::Running,
-        StatusClass::Monitor,
-        StatusClass::Success,
-        StatusClass::Inactive,
-    ];
-
+    let classes: Vec<Option<StatusClass>> = jobs.iter().map(|job| filter.classified(job)).collect();
     let mut sections = Vec::new();
-    for class in ORDER {
-        let mut indices: Vec<usize> = jobs
+    for class in StatusClass::ALL {
+        let mut indices: Vec<usize> = classes
             .iter()
             .enumerate()
-            .filter(|(_, job)| filter.matches(job) && StatusClass::of(job) == class)
+            .filter(|(_, seen)| **seen == Some(class))
             .map(|(index, _)| index)
             .collect();
         if indices.is_empty() {
@@ -88,7 +79,7 @@ fn by_status(jobs: &[JobView], filter: StatusFilter, now: OffsetDateTime) -> Vec
         }
         indices.sort_unstable_by(|a, b| compare_jobs(now, &jobs[*a], &jobs[*b]));
         sections.push(Section {
-            title: class.label().to_string(),
+            title: class.title().to_string(),
             jobs: indices,
         });
     }

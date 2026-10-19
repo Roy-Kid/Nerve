@@ -13,16 +13,18 @@ Stack: `nerve-hub` + tmux helper (Rust, `crates/`), SwiftUI menu-bar app (`Nerve
 
 | Zone | Path |
 |------|------|
-| State hub daemon | `crates/nerve-hub/` (ingest contract, SSE frames, refcount lifecycle) |
+| State hub daemon | `crates/nerve-hub/` (ingest contract, SSE frames, resident lifecycle) |
 | macOS app (surface) | `Nerve/Nerve/` (App, Models, Store, Services incl. `Services/Hub/`, UI) |
+| macOS UI package | `surfaces/macos/` (used by the menu-bar app) |
+| Tether surface | `surfaces/tether/` (installable plugin) |
+| Tether tests | `testing/tether/` (model and host integration) |
 | tmux surface | `surfaces/tmux/` (TPM entry) + `crates/nerve-tmux-surface/` (helper) |
 | Windows surface | `crates/nerve-windows-surface/` (tray icon + flyout) |
-| Shared surface logic | `crates/nerve-surface-core/` (frames, status, grouping, hub client) |
+| Shared surface logic | `crates/nerve-surface-core/` (protocol decoding, display helpers, hub client) |
 | OS primitives | `crates/nerve-platform/` (wire paths, process liveness) |
 | VS Code surface | `vsc-ext/` (Activity Bar + status bar; rslib/rspack) |
-| Tether surface | `surfaces/tether/` (Swift package `NervePlugin`; compile into Tether) |
 | Marketplace plugin | `plugins/nerve/` — Claude `hooks/nerve.js`, Codex `hooks/nerve.py`, Grok `hooks/grok-post.js` (command POST to `/v1/hook`) |
-| Grok HTTP mapper | `crates/nerve-hub/src/hook/` — `POST /v1/hook` |
+| All-producer event mapper | `crates/nerve-hub/src/hook/` — `POST /v1/hook` |
 | Website + **public docs** | `index/` → routes `/docs/*`; body `index/src/docs/content.ts` |
 | Demo / scripts | `fixtures/`, `scripts/` |
 | Passive agent notes | `.claude/notes/` |
@@ -63,18 +65,18 @@ node scripts/capture-vscode-surface.mjs             # capture the VS Code surfac
 1. **One job per conversation** — id `{producer}:{session_id}`. Subagents refine main `current` only; no child session rows. Batch/chain producers may use `role=group|member` with tree panel (display).
 2. **Fail-open hooks** — exit 0 always; never block the agent. No `NERVE_*` env; ingest fixed `http://127.0.0.1:17890`, served by `nerve-hub` (the port bind is its single-instance lock). Producers never spawn the hub.
 3. **Status from structured fields only** — never free-text message classification (`notification_type`, `background_tasks`, event name).
-4. **Memory-only runtime jobs** — jobs/timelines/pending live in `nerve-hub` process RAM; hub exits ~30s after the last surface disconnects (SSE refcount). Settings + managed `~/.ssh/config` only on disk.
-5. **Open alias ingest** — any snapshot `alias` shows; Settings Machines are tunnels only (Hosts from local `~/.ssh/config` + known_hosts; managed block is RemoteForward-only; ControlMaster via `ssh -O forward` when master is up). Tunnels target 17890, so remote producers *and* remote surfaces reach the hub for free.
-6. **Display only** — Nerve never reverse-controls agents or jobs (no approve/cancel/submit_input). Local actions: **Open/Focus** (location) + Copy; rows leave via SessionEnd / slot supersede / PID reap. Attention means “return to agent UI”, not “type here”.
-7. **Surfaces are peers** — macOS app, tmux plugin, VS Code extension, Windows tray, and Tether plugin only consume the hub contract (`GET /v1/jobs`, `GET /v1/stream` full frames with `departed` terminal states); none owns state, none knows the others. The hub never sends OS notifications. It *does* count open streams and publish a **notify lease** (`notify.policy` `single`|`all`, elected `owner`) so two surfaces on one machine do not both banner the same Ask. Default is `single` (prefer `macos`, then `tether`, then `windows`, then `vscode`, then `tmux`). `PUT /v1/notify` sets the policy. Each surface still dedupes locally on the Ask channel (`reason ∈ Ask`, `level ≥ suggested`, first sight or level upgrade, 120 s window) and only fires when the lease says it may. Hook wire contract is unchanged.
+4. **Memory-only runtime jobs** — jobs and timelines live in hub RAM. `nerve-hub ensure` owns discovery, detached startup and readiness; the fixed loopback bind is the singleton lock. Closing surfaces never stops the daemon. Machine identity and machine configuration are persistent, tasks are not.
+5. **One authority per machine** — hooks POST raw events to `/v1/hook?producer=…` on their own machine. The local hub alone manages SSH configuration, LocalForward tunnels and origin-scoped remote full snapshots. Replicate `/v1/stream?localOnly=true` only; never relay aggregated tasks. Remote disconnect retains its last snapshot with an offline machine state; only its origin hub reaps its PIDs. Clear deletes local jobs only.
+6. **Display only** — Nerve never runs, approves, cancels or submits input to agents. The hub publishes Open/Focus, Copy and log actions. Surfaces execute navigation and OS notifications, not task control.
+7. **Surfaces consume protocol v2** — `/v1/frame` and SSE publish `protocolVersion`, hub identity, monotonic revision, jobs, departed, authoritative display/order/summary, machine states and connection-targeted notifications. `/v1/jobs` uses the same projection. No surface lifecycle, classification, business deduplication, notification election or SSH execution. UI search/filter/selection/layout may only change presentation. Hub notification routing uses instance + connection identity, Ask escalation, 120-second deduplication and single/all policy (macOS, Windows, VS Code, tmux priority). Send at most once; never replay on reconnect. Old protocols require an upgrade.
 8. **Public docs** — edit `index/src/docs/content.ts` (and site UI), not a repo `docs/` folder. Keep root/plugin READMEs as short pointers.
 
 ## Default workflow
 
 1. Product copy / API handbook → `index/src/docs/content.ts` (+ pages under `src/pages/`)
-2. Hook lifecycle → `plugins/nerve/hooks/nerve.js` (Claude) · `nerve.py` (Codex) · hub `/v1/hook` (Grok HTTP)
-3. State semantics / ingest contract → `crates/nerve-hub/` (golden parity tests guard it)
-4. App UI / surface glue → `Nerve/Nerve/`; tmux surface → `surfaces/tmux/` + `crates/nerve-tmux-surface/`; VS Code surface → `vsc-ext/`; Windows tray → `crates/nerve-windows-surface/`; Tether plugin → `surfaces/tether/`
+2. Hook lifecycle → `plugins/nerve/hooks/nerve.js` (Claude) · `nerve.py` (Codex) · hub `/v1/hook` for every producer
+3. State semantics / ingest contract → `crates/nerve-hub/` (hub contract and lifecycle tests guard it)
+4. App UI / surface glue → `Nerve/Nerve/`; tmux surface → `surfaces/tmux/` + `crates/nerve-tmux-surface/`; VS Code surface → `vsc-ext/`; Windows tray → `crates/nerve-windows-surface/`
 5. Capture decisions → `.claude/notes/notes.md`
 
 <!-- nerve:harness:managed end -->

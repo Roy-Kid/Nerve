@@ -58,8 +58,8 @@ final class AppModel {
             self?.revealStatusPanelBestEffort()
         }
 
-        store.notificationSink = { [weak self] before, next in
-            self?.notifications?.evaluate(previous: before, next: next)
+        store.notificationSink = { [weak self] event in
+            self?.notifications?.deliver(event)
         }
 
         // SwiftUI observes the store and settings directly for MenuBarExtra updates.
@@ -159,7 +159,6 @@ final class AppModel {
     /// Call after Settings mutates the machine list.
     func machinesDidChange() {
         tunnels.syncConfig()
-        tunnels.reconnectAllEnabled()
     }
 
     func quit() {

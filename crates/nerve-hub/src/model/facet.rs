@@ -80,6 +80,7 @@ lenient_enum! {
 
 lenient_enum! {
     /// How badly the job wants a human back in the agent UI.
+    #[derive(PartialOrd, Ord)]
     AttentionLevel, fallback = None {
         #[default]
         None => "none",
@@ -206,7 +207,7 @@ pub struct ContextInfo {
 }
 
 /// Where a surface should send the human back to.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocationInfo {
     // Swift spells this property `openURL`; camelCase would give `openUrl`.

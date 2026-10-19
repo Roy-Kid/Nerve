@@ -11,14 +11,16 @@ use time::macros::datetime;
 const NOW: OffsetDateTime = datetime!(2026-07-19 12:00:00 UTC);
 
 fn jobs(value: serde_json::Value) -> Vec<JobView> {
-    serde_json::from_value(value).expect("job fixtures")
+    nerve_surface_core::testkit::jobs(value)
 }
 
 fn snapshot(jobs: Vec<JobView>, offline: bool) -> JobsSnapshot {
     JobsSnapshot {
+        summary: nerve_surface_core::testkit::summary(&jobs),
         jobs,
         offline,
         notify: Default::default(),
+        ..Default::default()
     }
 }
 

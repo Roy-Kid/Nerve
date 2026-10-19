@@ -1,95 +1,4 @@
-//! SSE frame contract tests (spec `nerve-hub` · T6 · acceptance A6).
-//!
-//! RED on purpose: `nerve_hub::HubRuntime` does not exist yet. T7 implements
-//! `sse/` + `lifecycle/` against the contract in this header; this file is the
-//! API definition.
-//!
-//! ─────────────────────────────────────────────────────────────────────────
-//! MINIMAL API CONTRACT (what T7 must expose)
-//! ─────────────────────────────────────────────────────────────────────────
-//!
-//! ```text
-//! nerve_hub::HubRuntime            // assembly point: store + broadcaster +
-//!                                  // refcount + grace timer. May be defined in
-//!                                  // `sse`/`lifecycle`/`runtime` and re-exported
-//!                                  // from the crate root — the path tests use is
-//!                                  // `nerve_hub::HubRuntime`.
-//! impl HubRuntime {
-//!     pub fn new(store: JobStore, grace: Duration) -> Self;
-//!     pub fn router(&self) -> axum::Router;      // T5's table + `GET /v1/stream`
-//!     pub fn shutdown(&self) -> impl Future<Output = ()>;   // may borrow `&self`
-//!     pub fn subscribe(&self) -> _;              // opaque guard; Drop releases
-//! }
-//! ```
-//!
-//! Rules this file and `tests/lifecycle.rs` pin together:
-//!
-//! 1. **`router()` may be called any number of times.** Every returned `Router`
-//!    shares the one store and the one broadcaster, so a write through one
-//!    router reaches a stream served by another. `http::{router, HubState}`
-//!    stay public and unchanged — `tests/contract_http.rs` must stay green.
-//! 2. **Every effective write broadcasts.** Snapshot / events / demo / clear /
-//!    action result that changed something schedules a frame. A write that
-//!    changed nothing (`{"applied":0}`) may or may not broadcast; no test here
-//!    depends on it.
-//! 3. **One SSE connection == one subscription**, the same reference
-//!    `subscribe()` takes. The grace timer is owned by the runtime, not by the
-//!    `shutdown()` future.
-//! 4. **The runtime and the routes read one store.** `HubState::new(JobStore)`
-//!    consumes the store today, so T7 needs a shared handle (a second
-//!    constructor, or moving ownership into the runtime) — while keeping
-//!    `HubState::new` and `http::router` exactly as `tests/contract_http.rs`
-//!    uses them.
-//! 5. **A connect frame must not drain `departed`.** The buffer belongs to every
-//!    subscriber; a joining surface renders the full `jobs` set and takes
-//!    nothing away from the others (pinned by the first test below).
-//!
-//! ─────────────────────────────────────────────────────────────────────────
-//! WIRE SHAPE THIS FILE PINS
-//! ─────────────────────────────────────────────────────────────────────────
-//!
-//! * `GET /v1/stream` answers `200` with `content-type: text/event-stream`.
-//! * One frame = one SSE event = a single `data:` line holding **compact** JSON
-//!   (no embedded newline), followed by a blank line. Anything else the
-//!   transport adds (chunked-encoding size lines, `:` keep-alive comments,
-//!   `event:` / `id:` lines) is ignored by the reader below, so T7 is free to
-//!   add them — but a frame may not be split across two `data:` lines.
-//! * Frame body is `{"jobs":[…],"departed":[…],"notify":{…}}`: three keys, no
-//!   delta protocol, no other event type. `notify` is the interrupt lease
-//!   (policy, elected owner, connected surface labels) — it is not a filter
-//!   on `jobs`.
-//! * `jobs` is the authoritative full set and is byte-for-byte what
-//!   `GET /v1/jobs` returns, embedded `timeline` included.
-//! * `departed` holds the **terminal** state of jobs evicted since the previous
-//!   frame (eviction happens on SessionEnd, so a plain frame diff would lose
-//!   it); same id twice inside one window keeps only the last; the buffer is
-//!   drained by the frame that carries it.
-//! * Connect pushes one frame immediately (full resync); later changes coalesce
-//!   in a ~150 ms window.
-//! * `?surface=<label>` names the connection for the notify lease. It never
-//!   changes which jobs a frame contains.
-//!
-//! ─────────────────────────────────────────────────────────────────────────
-//! HARNESS
-//! ─────────────────────────────────────────────────────────────────────────
-//!
-//! Streaming needs a real socket, so these tests bind `127.0.0.1:0` — an
-//! ephemeral port, **never** 17890. The ingest port is a single-instance lock
-//! held by whatever hub or Nerve.app is running on the developer's machine, and
-//! a test must never fight it. The SSE client is hand-written over
-//! `tokio::net::TcpStream` (raw request line + line-oriented reads) rather than
-//! an HTTP client dependency: one test file is not worth a new crate in the
-//! tree.
-//!
-//! Writes go through `runtime.router()` with `ConnectInfo` injected, exactly as
-//! `tests/contract_http.rs` does, so the loopback guard is satisfied without a
-//! second socket.
-//!
-//! Determinism: fake clock (every `endedAt` the hub fills is the frozen `T0`),
-//! injected machine alias, fake `PidProbe`, hard-coded goldens. The only real
-//! time here is the coalesce window and the one grace test at the bottom, both
-//! asserted as tolerant bounds rather than exact instants.
-
+//! Protocol-v2 SSE contract: full snapshots, terminal hints and recovery.
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -118,9 +27,6 @@ const T0: &str = "2026-07-19T00:00:00Z";
 /// The alias injected into `JobStore::new` — "this machine" for the hub.
 const MACHINE_ALIAS: &str = "test-mac";
 
-/// Grace long enough that no frame test can trip over the lifecycle timer.
-const LONG_GRACE: Duration = Duration::from_secs(3_600);
-
 /// How long a test waits for a frame it expects. Generous: it only has to
 /// exceed the coalesce window, never to measure it.
 const FRAME_WAIT: Duration = Duration::from_secs(2);
@@ -133,9 +39,9 @@ fn store() -> JobStore {
     JobStore::new(clock, MACHINE_ALIAS.to_string(), Arc::new(EveryPidAlive))
 }
 
-/// A runtime whose grace never fires during a frame test.
+/// A resident runtime for frame tests.
 fn runtime() -> HubRuntime {
-    HubRuntime::new(store(), LONG_GRACE)
+    HubRuntime::new(store())
 }
 
 /// Liveness oracle that never reaps: these tests are about frames, not the reaper.
@@ -478,7 +384,23 @@ async fn test_a_frame_carries_exactly_the_two_contract_keys() {
     let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
     keys.sort_unstable();
     // No delta protocol, no event-type tag, no cursor: jobs, departed, notify.
-    assert_eq!(keys, ["departed", "jobs", "notify"]);
+    assert_eq!(
+        keys,
+        [
+            "departed",
+            "hubInstanceId",
+            "jobs",
+            "machineId",
+            "machines",
+            "notifications",
+            "notify",
+            "order",
+            "protocolVersion",
+            "revision",
+            "summary",
+            "tabIndicators"
+        ]
+    );
     assert_eq!(frame["notify"]["policy"], "single");
 }
 
@@ -704,7 +626,7 @@ async fn test_a_live_stream_holds_the_hub_open_and_releases_it_on_disconnect() {
     // socket is wired to the refcount. `tests/lifecycle.rs` owns the timing
     // rules themselves, on a paused clock and without any socket.
     let grace = Duration::from_secs(1);
-    let runtime = HubRuntime::new(store(), grace);
+    let runtime = HubRuntime::new(store());
     let address = serve(&runtime).await;
     let mut stream = SseClient::connect(address, "").await;
     // Read the first frame: the body is now being polled, so the subscription is
@@ -713,12 +635,15 @@ async fn test_a_live_stream_holds_the_hub_open_and_releases_it_on_disconnect() {
 
     assert!(
         timeout(grace * 2, runtime.shutdown()).await.is_err(),
-        "a live SSE subscription must cancel the grace timer"
+        "subscription changes must never stop the resident hub"
     );
 
     drop(stream);
 
-    timeout(Duration::from_secs(10), runtime.shutdown())
-        .await
-        .expect("the hub must exit one grace after its last stream disconnects");
+    assert!(
+        timeout(Duration::from_secs(2), runtime.shutdown())
+            .await
+            .is_err(),
+        "surface disconnection must not stop hub"
+    );
 }

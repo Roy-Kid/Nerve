@@ -24,7 +24,7 @@ pub struct MachineSection {
 }
 
 pub fn machine_label(job: &JobView) -> &str {
-    job.alias.trim()
+    job.extensions.hub.machine_label.trim()
 }
 
 /// Section title for a job whose producer named no machine.
@@ -48,25 +48,26 @@ pub fn group_by_machine(
     now: OffsetDateTime,
     filter: StatusFilter,
 ) -> Vec<MachineSection> {
-    let mut buckets: Vec<(String, Vec<usize>)> = Vec::new();
+    let mut buckets: Vec<(String, String, Vec<usize>)> = Vec::new();
     for (index, job) in jobs.iter().enumerate() {
         if !filter.matches(job) {
             continue;
         }
-        let key = match machine_label(job) {
+        let title = match machine_label(job) {
             "" => UNKNOWN_MACHINE,
             label => label,
         };
-        if let Some(bucket) = buckets.iter_mut().find(|(title, _)| title == key) {
-            bucket.1.push(index);
+        let key = &job.extensions.hub.machine_group;
+        if let Some(bucket) = buckets.iter_mut().find(|(group, _, _)| group == key) {
+            bucket.2.push(index);
         } else {
-            buckets.push((key.to_string(), vec![index]));
+            buckets.push((key.to_string(), title.to_string(), vec![index]));
         }
     }
-    buckets.sort_unstable_by(|(a, _), (b, _)| case_insensitive(a, b));
+    buckets.sort_unstable_by(|(_, a, _), (_, b, _)| case_insensitive(a, b));
     buckets
         .into_iter()
-        .map(|(title, mut bucket)| {
+        .map(|(_, title, mut bucket)| {
             bucket.sort_unstable_by(|a, b| compare_jobs(now, &jobs[*a], &jobs[*b]));
             MachineSection {
                 title,

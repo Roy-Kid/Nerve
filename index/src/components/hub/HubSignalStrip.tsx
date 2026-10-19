@@ -28,7 +28,7 @@ export function HubSignalStrip() {
           viewport={{ once: true, margin: '-15%' }}
           transition={ease(0.65)}
         >
-          <p className="m-0 mb-4 text-sm/[1.5] font-[650] text-[#8eb8ff]">
+          <p className="m-0 mb-4 text-sm/[1.5] font-[650] text-night-link">
             {t.hub.product.kicker}
           </p>
           <h2 id="home-product-title" className={sectionTitle}>
@@ -53,7 +53,7 @@ export function HubSignalStrip() {
         </motion.header>
 
         <motion.figure
-          className="m-0 min-w-0 overflow-hidden rounded-[22px] border border-white/12 bg-[#0d1221] shadow-[0_36px_90px_rgb(0_0_0/38%)]"
+          className="m-0 min-w-0 overflow-hidden rounded-[22px] border border-white/12 bg-night shadow-night"
           initial={reduced ? false : { opacity: 0, y: 34, scale: 0.97 }}
           whileInView={{ opacity: 1, y: 0, scale: 1 }}
           viewport={{ once: true, margin: '-10%' }}
@@ -76,7 +76,7 @@ export function HubSignalStrip() {
                   className="size-2 rounded-full"
                   style={{
                     backgroundColor: statusMeta[job.status].color,
-                    boxShadow: `0 0 12px ${statusMeta[job.status].color}66`,
+                    boxShadow: `0 0 12px color-mix(in srgb, ${statusMeta[job.status].color} 40%, transparent)`,
                   }}
                 />
                 <span className="min-w-0">

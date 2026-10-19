@@ -80,6 +80,7 @@ pub struct Broadcaster {
     window: Duration,
     frames: broadcast::Sender<Arc<str>>,
     roster: SurfaceRoster,
+    notifications: Mutex<crate::notification::Notifications>,
 }
 
 impl Broadcaster {
@@ -100,6 +101,7 @@ impl Broadcaster {
             window,
             frames,
             roster,
+            notifications: Mutex::new(crate::notification::Notifications::default()),
         }
     }
 
@@ -146,7 +148,14 @@ impl Broadcaster {
         // may already have passed it.
         self.changes.take();
         let notify = self.roster.lease();
-        let frame: Arc<str> = Arc::from(Frame::published(&mut store, notify).render());
+        let mut frame = Frame::published(&mut store, notify).value();
+        let notifications = self.notifications.lock().unwrap().evaluate_frame(
+            &frame["jobs"],
+            &frame["departed"],
+            &self.roster,
+        );
+        frame["notifications"] = serde_json::json!(notifications);
+        let frame: Arc<str> = Arc::from(frame.to_string());
         // No subscriber is not an error: a hub with no surface attached still
         // keeps its state, it simply has nobody to tell.
         let _ = self.frames.send(frame);

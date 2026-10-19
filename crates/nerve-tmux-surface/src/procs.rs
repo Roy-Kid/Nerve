@@ -35,18 +35,24 @@ struct Proc {
 }
 
 impl ProcTable {
-    /// Live table, or empty when `ps` could not run.
-    pub fn current() -> Self {
+    /// Borrow the live table. A hit does not clone every argv.
+    ///
+    /// `body` must not call `with_current` while a refresh is in progress on
+    /// this thread: the cache is a `RefCell`, and the mutable insert is dropped
+    /// before `body` runs so a nested hit can borrow again.
+    pub fn with_current<R>(body: impl FnOnce(&ProcTable) -> R) -> R {
         CACHE.with(|cache| {
-            let mut slot = cache.borrow_mut();
-            if let Some((at, table)) = slot.as_ref()
-                && at.elapsed() < TTL
-            {
-                return table.clone();
+            let fresh = match cache.borrow().as_ref() {
+                Some((at, _)) => at.elapsed() >= TTL,
+                None => true,
+            };
+            if fresh {
+                let table = snapshot();
+                *cache.borrow_mut() = Some((Instant::now(), table));
             }
-            let table = snapshot();
-            *slot = Some((Instant::now(), table.clone()));
-            table
+            let slot = cache.borrow();
+            let table = &slot.as_ref().expect("table was just stored").1;
+            body(table)
         })
     }
 

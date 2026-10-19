@@ -39,7 +39,13 @@ pub struct JobStore {
     timelines: Timelines,
     pending: PendingQueue,
     seen: SeenEvents,
+    last_hooks: BTreeMap<(String, String), String>,
     departed: Vec<Job>,
+    pub(crate) instance_id: String,
+    pub(crate) revision: u64,
+    pub(crate) machine_id: String,
+    pub(crate) remote_jobs: BTreeMap<String, Vec<Value>>,
+    pub(crate) machines: BTreeMap<String, Value>,
 }
 
 /// Open fields a snapshot inherits from the job it replaces.
@@ -56,18 +62,58 @@ const STICKY_EXTENSIONS: [&str; 2] = ["lastPrompt", "lastPromptAt"];
 /// Borrowed rather than owned, so the frame that publishes a whole job set
 /// serialises straight out of the store — no intermediate `serde_json::Value`
 /// tree to build and walk a second time.
-#[derive(Serialize)]
 pub struct JobView<'a> {
-    #[serde(flatten)]
     job: &'a Job,
     timeline: &'a [TimelineEntry],
+    display: crate::projection::Display,
 }
 
+impl Serialize for JobView<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut value = serde_json::to_value(self.job).map_err(serde::ser::Error::custom)?;
+        value["timeline"] =
+            serde_json::to_value(self.timeline).map_err(serde::ser::Error::custom)?;
+        value["display"] =
+            serde_json::to_value(&self.display).map_err(serde::ser::Error::custom)?;
+        let location = self.job.location.clone().unwrap_or_default();
+        let mut actions: Vec<_> = self
+            .job
+            .actions
+            .iter()
+            .filter(|a| {
+                matches!(
+                    a.kind.to_ascii_lowercase().as_str(),
+                    "open" | "focus" | "open_logs" | "openlogs" | "copy" | "copy_summary"
+                )
+            })
+            .cloned()
+            .collect();
+        for action in crate::hook::build::local_actions(&location) {
+            if !actions
+                .iter()
+                .any(|a| a.id == action.id || a.kind == action.kind)
+            {
+                actions.push(action);
+            }
+        }
+        actions.sort_by_key(|a| match a.kind.as_str() {
+            "open" | "focus" => 0,
+            "copy" | "copy_summary" => 1,
+            _ => 2,
+        });
+        value["actions"] = serde_json::to_value(actions).map_err(serde::ser::Error::custom)?;
+        value.serialize(serializer)
+    }
+}
 impl<'a> JobView<'a> {
     /// A row that has left: eviction forgot its timeline, and a surface must
     /// parse one job shape rather than two, so it publishes an empty one.
     pub(crate) fn departed(job: &'a Job) -> Self {
-        Self { job, timeline: &[] }
+        Self {
+            job,
+            timeline: &[],
+            display: crate::projection::display(job),
+        }
     }
 }
 
@@ -80,9 +126,12 @@ pub struct JobsSeq<'a>(pub &'a JobStore);
 impl Serialize for JobsSeq<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut seq = serializer.serialize_seq(Some(self.0.jobs.len()))?;
-        for job in self.0.jobs.values() {
+        let mut jobs: Vec<_> = self.0.jobs.values().collect();
+        jobs.sort_by_key(|job| crate::projection::display(job).order_key);
+        for job in jobs {
             seq.serialize_element(&JobView {
                 job,
+                display: crate::projection::display(job),
                 timeline: self.0.timelines.of(&job.id),
             })?;
         }
@@ -100,7 +149,17 @@ impl JobStore {
             timelines: Timelines::default(),
             pending: PendingQueue::default(),
             seen: SeenEvents::default(),
+            last_hooks: BTreeMap::new(),
             departed: Vec::new(),
+            instance_id: format!(
+                "{}-{}",
+                std::process::id(),
+                time::OffsetDateTime::now_utc().unix_timestamp_nanos()
+            ),
+            revision: 0,
+            machine_id: crate::federation::machine_id(),
+            remote_jobs: BTreeMap::new(),
+            machines: BTreeMap::new(),
         }
     }
 
@@ -115,6 +174,10 @@ impl JobStore {
     ///
     /// Ended and legacy-noise rows count too: the producer reported them, and
     /// `{"applied":N}` answers "how much of your batch did I read".
+    pub fn remember_hook(&mut self, producer: &str, id: &str) -> bool {
+        self.seen.remember(&format!("hook/{producer}/{id}"))
+    }
+
     pub fn apply_snapshot(&mut self, jobs: Vec<Job>) -> usize {
         let seen = jobs.len();
         for job in jobs {
@@ -126,6 +189,7 @@ impl JobStore {
     /// Apply one event; `false` means it changed nothing (duplicate id, stale
     /// version, or an unknown job with nothing to create from).
     pub fn apply_event(&mut self, event: Event) -> bool {
+        self.revision += 1;
         if !self.seen.remember(&event.id) {
             return false;
         }
@@ -163,6 +227,7 @@ impl JobStore {
     }
 
     fn store_snapshot(&mut self, mut job: Job) {
+        self.revision += 1;
         // Job-level alias fallback, after envelope-level normalisation.
         if job.alias.is_empty() {
             job.alias.clone_from(&self.machine_alias);
@@ -175,6 +240,10 @@ impl JobStore {
             if job.version < stored.version {
                 return;
             }
+            // Tool chatter rewrites the snapshot. Keep the anchors the panel
+            // sorts on, the same way `sealed` keeps them when a job ends.
+            job.created_at = stored.created_at;
+            job.started_at = Some(stored.started_at.unwrap_or(stored.created_at));
             for key in STICKY_EXTENSIONS {
                 if job.extensions.contains_key(key) {
                     continue;
@@ -262,6 +331,7 @@ impl JobStore {
     /// Session closed: keep the terminal state for subscribers, then drop the
     /// row. There is no Success linger — only open work stays visible.
     fn evict_ended(&mut self, ended: Job) {
+        self.revision += 1;
         let id = ended.id.clone();
         self.jobs.remove(&id);
         self.timelines.forget(&id);
@@ -347,6 +417,9 @@ impl JobStore {
     pub fn expire_and_reap(&mut self) -> bool {
         let expired = self.expire_pending();
         let reaped = self.reap_dead_local_producers();
+        if expired || reaped {
+            self.revision += 1;
+        }
         expired || reaped
     }
 
@@ -401,10 +474,13 @@ impl JobStore {
 
     /// Admin wipe. Not a lifecycle transition, so nothing departs.
     pub fn clear(&mut self) {
+        self.revision += 1;
         self.jobs.clear();
+        self.departed.clear();
         self.timelines.clear();
         self.pending.clear();
         self.seen.clear();
+        self.last_hooks.clear();
     }
 
     // ── Pending actions (dormant — nothing enqueues today) ───────────────────
@@ -495,30 +571,11 @@ impl JobStore {
         };
         action.state = state;
         job.updated_at = now;
+        self.revision += 1;
     }
 
     // ── Publication ─────────────────────────────────────────────────────────
 
-    /// How many jobs a frame will name — used to size the render buffer.
-    pub(crate) fn job_count(&self) -> usize {
-        self.jobs.len()
-    }
-
-    /// Every stored job in the published shape, borrowed from the store.
-    ///
-    /// `GET /v1/jobs` and the state tests still want a `Value`; the SSE frame
-    /// path serialises [`JobsSeq`] instead of collecting this.
-    pub(crate) fn job_views(&self) -> Vec<JobView<'_>> {
-        self.jobs
-            .values()
-            .map(|job| JobView {
-                job,
-                timeline: self.timelines.of(&job.id),
-            })
-            .collect()
-    }
-
-    /// Every stored job as a bare JSON array, each with its timeline.
     /// Live conversation rows for this producer in this workspace.
     ///
     /// Used by hook ingest to close a superseded session when the in-memory
@@ -542,9 +599,72 @@ impl JobStore {
             .collect()
     }
 
+    /// Stored UI slot for `id`, when the row recorded one.
+    pub fn stored_slot(&self, id: &str) -> Option<&str> {
+        let text = self.jobs.get(id)?.extensions.get("slot")?.as_str()?;
+        let text = text.trim();
+        if text.is_empty() { None } else { Some(text) }
+    }
+
+    /// Every stored job as a bare JSON array, each with its timeline.
+    ///
+    /// Same [`JobsSeq`] walk as an SSE frame — no intermediate `Vec<JobView>`.
     pub fn jobs_json(&self) -> Value {
-        // See `pending_json`: plain data, unreachable fallback, array shape kept.
-        serde_json::to_value(self.job_views()).unwrap_or_else(|_| Value::Array(Vec::new()))
+        let mut rows = self
+            .local_jobs_json()
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        for jobs in self.remote_jobs.values() {
+            rows.extend(jobs.iter().cloned());
+        }
+        rows.sort_by(|a, b| {
+            a["display"]["orderKey"]
+                .as_str()
+                .cmp(&b["display"]["orderKey"].as_str())
+                .then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+        });
+        for (index, row) in rows.iter_mut().enumerate() {
+            let online = row["machineId"].as_str() == Some(&self.machine_id)
+                || self
+                    .machines
+                    .values()
+                    .any(|m| m["machineId"] == row["machineId"] && m["state"] == "connected");
+            row["display"]["sourceOnline"] = serde_json::json!(online);
+            row["display"]["machineGroup"] = row["machineId"].clone();
+            if !online {
+                let label = row["display"]["statusLabel"].as_str().unwrap_or("Task");
+                row["display"]["statusLabel"] = serde_json::json!(format!("{label} · Offline"));
+            }
+            row["display"]["order"] = serde_json::json!(index);
+            row["extensions"]["hub"] = row["display"].clone();
+        }
+        Value::Array(rows)
+    }
+
+    pub fn remember_raw_hook(&mut self, producer: &str, session: &str, payload: &Value) -> bool {
+        let key = (producer.to_owned(), session.to_owned());
+        let raw = payload.to_string();
+        if self.last_hooks.get(&key) == Some(&raw) {
+            return false;
+        }
+        if self.last_hooks.len() >= 200 {
+            self.last_hooks.pop_first();
+        }
+        self.last_hooks.insert(key, raw);
+        true
+    }
+    pub fn local_jobs_json(&self) -> Value {
+        let mut rows =
+            serde_json::to_value(JobsSeq(self)).unwrap_or_else(|_| Value::Array(Vec::new()));
+        if let Some(jobs) = rows.as_array_mut() {
+            for job in jobs {
+                job["machineId"] = Value::String(self.machine_id.clone());
+                job["originJobId"] = job["id"].clone();
+                job["display"]["machineLabel"] = serde_json::json!(self.machine_alias);
+            }
+        }
+        rows
     }
 
     fn now(&self) -> WireTime {

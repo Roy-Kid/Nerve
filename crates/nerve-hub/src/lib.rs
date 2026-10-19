@@ -6,11 +6,16 @@
 
 pub mod cli;
 pub mod clock;
+pub mod ensure;
+pub mod federation;
 pub mod hook;
 pub mod http;
 pub mod lifecycle;
 pub mod log;
 pub mod model;
+pub mod notification;
+pub mod projection;
+pub mod remote_focus;
 mod runtime;
 pub mod sse;
 pub mod state;
@@ -36,10 +41,8 @@ use crate::state::{JobStore, LocalAlias, SignalProbe};
 pub const INGEST_ADDR: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 17890));
 
 /// A configured hub, ready to take over the ingest port.
-#[derive(Debug)]
-pub struct Hub {
-    grace: Duration,
-}
+#[derive(Debug, Default)]
+pub struct Hub;
 
 impl Hub {
     /// How long a connection still open when the hub decides to stop may hold
@@ -50,8 +53,8 @@ impl Hub {
     /// fires would otherwise keep a hub alive that has already decided to go.
     const DRAIN: Duration = Duration::from_secs(2);
 
-    pub fn new(grace: Duration) -> Self {
-        Self { grace }
+    pub fn new() -> Self {
+        Self
     }
 
     /// Bind the ingest port and serve until the hub decides to stop.
@@ -71,11 +74,11 @@ impl Hub {
 
         tracing::info!(
             addr = %INGEST_ADDR,
-            grace_secs = self.grace.as_secs(),
             "serving"
         );
 
-        let hub = HubRuntime::new(self.store(), self.grace);
+        let hub = HubRuntime::new(self.store());
+        hub.start_connections();
         let stopping = hub.shutdown();
         let drained = hub.shutdown();
         // `into_make_service_with_connect_info` is what installs the peer

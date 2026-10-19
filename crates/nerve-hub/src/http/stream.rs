@@ -63,6 +63,12 @@ pub fn stream_router(state: StreamState) -> Router {
 #[derive(Debug, Deserialize)]
 struct SurfaceQuery {
     surface: Option<String>,
+    #[serde(default, rename = "localOnly")]
+    local_only: bool,
+    #[serde(rename = "instanceId")]
+    instance: Option<String>,
+    #[serde(default)]
+    notifications: bool,
 }
 
 async fn stream(
@@ -70,15 +76,26 @@ async fn stream(
     Query(query): Query<SurfaceQuery>,
 ) -> Sse<KeepAliveStream<FrameStream>> {
     let label = query.surface.as_deref().unwrap_or("anonymous");
-    let presence = state.roster.subscribe(label);
+    let presence = state.roster.subscribe_client(
+        label,
+        query.instance.as_deref().unwrap_or(""),
+        query.notifications && !query.local_only,
+    );
+    let connection = presence.connection_id();
     tracing::info!(surface = label, "surface attached");
 
     let (updates, connect) = state.frames.join();
     let (outgoing, incoming) = mpsc::channel(CONNECTION_BACKLOG);
     // The connect frame is queued before the relay starts, so a surface that
     // never sees another change still renders the current state.
-    let _ = outgoing.try_send(connect);
-    tokio::spawn(relay(Arc::clone(&state.frames), updates, outgoing));
+    let _ = outgoing.try_send(local_frame(connect, query.local_only, connection));
+    tokio::spawn(relay(
+        Arc::clone(&state.frames),
+        updates,
+        outgoing,
+        query.local_only,
+        connection,
+    ));
 
     Sse::new(FrameStream {
         frames: incoming,
@@ -96,6 +113,8 @@ async fn relay(
     frames: Arc<Broadcaster>,
     mut updates: broadcast::Receiver<Arc<str>>,
     outgoing: mpsc::Sender<Arc<str>>,
+    local_only: bool,
+    connection: u64,
 ) {
     loop {
         let frame = tokio::select! {
@@ -109,7 +128,11 @@ async fn relay(
                 Err(RecvError::Closed) => return,
             },
         };
-        if outgoing.send(frame).await.is_err() {
+        if outgoing
+            .send(local_frame(frame, local_only, connection))
+            .await
+            .is_err()
+        {
             return;
         }
     }
@@ -133,4 +156,32 @@ impl Stream for FrameStream {
             .poll_recv(context)
             .map(|frame| frame.map(|frame| Ok(Event::default().data(frame))))
     }
+}
+
+fn local_frame(frame: Arc<str>, local_only: bool, connection: u64) -> Arc<str> {
+    let mut value: serde_json::Value = serde_json::from_str(&frame).expect("hub frame");
+    if let Some(events) = value["notifications"].as_array_mut() {
+        events.retain(|e| e["connectionId"].as_u64() == Some(connection));
+    }
+    if !local_only {
+        return Arc::from(value.to_string());
+    }
+    let origin = value["machineId"].clone();
+    if let Some(jobs) = value["jobs"].as_array_mut() {
+        jobs.retain(|job| job["machineId"] == origin);
+    }
+    value["summary"] = crate::projection::summarize(&value["jobs"]);
+    value["tabIndicators"] = crate::projection::tab_indicators(&value["jobs"]);
+    value["order"] = serde_json::json!(
+        value["jobs"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|j| j["id"].clone())
+            .collect::<Vec<_>>()
+    );
+    value["machines"] = serde_json::json!([]);
+    value["notifications"] = serde_json::json!([]);
+    value["departed"] = serde_json::json!([]);
+    Arc::from(value.to_string())
 }

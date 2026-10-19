@@ -1,12 +1,12 @@
-import type { Job, Status } from "./job";
+import type { AttentionLevel, Health, Job, Outcome, Status } from "./job";
 import { jobWorkspace } from "./job";
 import { isInside } from "./path";
-import { statusOf, statusRank } from "./status";
+import { statusOf } from "./status";
 
 export type JobFilter = "all" | "attention" | "running" | "folder";
 
-const ATTENTION_STATUSES = new Set<Status>(["problem", "attention"]);
-const RUNNING_STATUSES = new Set<Status>(["running", "monitor"]);
+const ATTENTION_STATUSES = new Set<Status>(["attention"]);
+const RUNNING_STATUSES = new Set<Status>(["running"]);
 
 export function jobInFolder(job: Job, folders: readonly string[]): boolean {
   const workspace = jobWorkspace(job);
@@ -32,9 +32,7 @@ export function matchesFilter(
 }
 
 export function compareJobs(left: Job, right: Job): number {
-  const status = statusRank(statusOf(left)) - statusRank(statusOf(right));
-  if (status !== 0) return status;
-  const updated = (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "");
-  if (updated !== 0) return updated;
-  return left.id.localeCompare(right.id);
+  const a = left.extensions.hub as {order?: number} | undefined;
+  const b = right.extensions.hub as {order?: number} | undefined;
+  return (a?.order ?? 0) - (b?.order ?? 0);
 }

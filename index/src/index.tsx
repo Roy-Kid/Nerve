@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import './styles/theme.css';
 import './styles/mac-preview.css';
-import './styles/tmux-preview.css';
 
 const rootEl = document.getElementById('root');
 if (!rootEl) {

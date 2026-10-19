@@ -31,6 +31,7 @@
   --color-night-raised: #19213a;
   --color-night-text: #f6f7fb;
   --color-night-muted: #aab3c4;
+  --color-night-link: #8eb8ff;
 
   /* The Apple label ramp the product chrome is drawn in. */
   --color-label: #1d1d1f;
@@ -54,6 +55,11 @@
   --color-status-success: #30d158;
   --color-status-inactive: #8e8e93;
 
+  /* Traffic lights on the live mocks. One set for every window chrome. */
+  --color-traffic-red: #ff5f57;
+  --color-traffic-amber: #febc2e;
+  --color-traffic-green: #28c840;
+
   /* Where the nav collapses, and where a three-up grid becomes one column.
      Neither lands on Tailwind's own scale, so both are named here. */
   --breakpoint-lap: 56.25rem;
@@ -62,6 +68,7 @@
   --container-page: 1120px;
   --shadow-card: 0 10px 30px rgb(57 77 112 / 8%);
   --shadow-float: 0 24px 70px rgb(57 77 112 / 14%);
+  --shadow-night: 0 36px 90px rgb(0 0 0 / 38%);
   --ease-page: cubic-bezier(0.22, 1, 0.36, 1);
 
   --animate-mark-arrive: chrome-mark-arrive 520ms var(--ease-page) both;

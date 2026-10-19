@@ -1,68 +1,61 @@
-//! Whether this surface may raise an interrupt for a frame.
-//!
-//! The hub elects an owner when `policy` is `single` (the default a current
-//! hub sends). An older hub omits `notify` entirely; that decodes as `All`,
-//! which is the historical "every surface decides for itself" rule.
-
 use serde::Deserialize;
+use serde::de::Deserializer;
 
 /// How the hub is spreading the interrupt channel.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum NotifyPolicy {
     /// Every connected surface that has notifications on may fire.
     ///
     /// Default for a *missing* `notify` object, so a surface talking to an
-    /// older hub does not go silent.
-    #[default]
+    /// older hub does not go silent. A present object with a missing or
+    /// unknown `policy` is [`Self::Single`] — the hub's own default — so two
+    /// surfaces do not both banner.
     All,
     /// Only [`NotifyLease::owner`] may fire.
+    #[default]
     Single,
 }
 
 /// The lease one SSE frame (or `/v1/health`) carries.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NotifyLease {
-    #[serde(default)]
     pub policy: NotifyPolicy,
-    #[serde(default)]
     pub owner: Option<String>,
-    #[serde(default)]
     pub surfaces: Vec<String>,
-    #[serde(default)]
     pub watchers: usize,
 }
 
-impl NotifyLease {
-    /// Whether `surface` may raise an OS (or in-app) interrupt for this frame.
-    pub fn may_interrupt(&self, surface: &str) -> bool {
-        match self.policy {
-            NotifyPolicy::All => true,
-            NotifyPolicy::Single => self.owner.as_deref() == Some(surface),
+impl<'de> Deserialize<'de> for NotifyLease {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Raw {
+            #[serde(default)]
+            policy: Option<String>,
+            #[serde(default)]
+            owner: Option<String>,
+            #[serde(default)]
+            surfaces: Vec<String>,
+            #[serde(default)]
+            watchers: usize,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn missing_notify_lets_everyone_fire() {
-        let lease = NotifyLease::default();
-        assert!(lease.may_interrupt("macos"));
-        assert!(lease.may_interrupt("tether"));
-    }
-
-    #[test]
-    fn single_only_the_owner() {
-        let lease = NotifyLease {
-            policy: NotifyPolicy::Single,
-            owner: Some("macos".into()),
-            surfaces: vec!["macos".into(), "tether".into()],
-            watchers: 2,
+        let raw = Raw::deserialize(deserializer)?;
+        let policy = match raw
+            .policy
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("all") => NotifyPolicy::All,
+            Some("single") => NotifyPolicy::Single,
+            // Present object, policy missing or not a spelling we know.
+            Some(_) | None => NotifyPolicy::Single,
         };
-        assert!(lease.may_interrupt("macos"));
-        assert!(!lease.may_interrupt("tether"));
+        Ok(Self {
+            policy,
+            owner: raw.owner,
+            surfaces: raw.surfaces,
+            watchers: raw.watchers,
+        })
     }
 }

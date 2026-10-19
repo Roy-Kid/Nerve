@@ -451,9 +451,8 @@ fn test_snapshot_fills_empty_job_alias_with_machine_alias() {
 }
 
 #[test]
-fn test_store_never_derives_display_actions() {
-    // `ensureLocalActions` stays in the surface: a job with a location and no
-    // declared actions must not grow an Open/Copy pair inside the hub.
+fn test_hub_publishes_display_actions() {
+    // Surfaces consume these actions without rewriting the task.
     let mut fixture = fixture();
 
     fixture.store.apply_snapshot(vec![job_fixture(
@@ -465,7 +464,8 @@ fn test_store_never_derives_display_actions() {
     )]);
 
     let stored = job_in(&fixture.store.jobs_json(), "a1");
-    assert!(array(at(&stored, "/actions")).is_empty());
+    assert_eq!(text(&stored, "/actions/0/kind"), "open");
+    assert_eq!(text(&stored, "/actions/1/kind"), "copy_summary");
 }
 
 // ── 3. Legacy child hygiene (`Subject.swift:127`) ───────────────────────────
@@ -794,7 +794,7 @@ fn test_reaper_skips_jobs_younger_than_min_age() {
 }
 
 #[test]
-fn test_reaper_never_touches_remote_alias_jobs() {
+fn test_alias_does_not_change_local_authority() {
     let mut fixture = fixture();
     fixture.probe.set(4242, PidState::Dead);
     fixture.store.apply_snapshot(vec![job_fixture(
@@ -808,8 +808,8 @@ fn test_reaper_never_touches_remote_alias_jobs() {
     fixture.clock.advance(Duration::from_secs(10));
     fixture.store.expire_and_reap();
 
-    assert!(has_job(&fixture.store.jobs_json(), "claude-code:s1"));
-    assert!(fixture.store.take_departed().is_empty());
+    assert!(!has_job(&fixture.store.jobs_json(), "claude-code:s1"));
+    assert_eq!(fixture.store.take_departed().len(), 1);
 }
 
 #[test]

@@ -10,7 +10,7 @@ describe('status ribbon gradient', () => {
     ]);
 
     expect(gradient).toBe(
-      'linear-gradient(90deg, #0a84ff 0%, #0a84ff 45.5%, #ff9f0a 54.5%, #ff9f0a 100%)',
+      'linear-gradient(90deg, var(--color-status-running) 0%, var(--color-status-running) 45.5%, var(--color-status-attention) 54.5%, var(--color-status-attention) 100%)',
     );
   });
 
@@ -20,13 +20,13 @@ describe('status ribbon gradient', () => {
       { id: 'attention', status: 'attention', weight: 1 },
     ]);
 
-    expect(gradient).toContain('#ff3b30 87.2%');
-    expect(gradient).toContain('#ff9f0a 92.8%');
+    expect(gradient).toContain('var(--color-status-problem) 87.2%');
+    expect(gradient).toContain('var(--color-status-attention) 92.8%');
   });
 
   it('falls back to the inactive color when no segment is visible', () => {
     expect(buildStatusRibbonGradient([])).toBe(
-      'linear-gradient(90deg, #8e8e93 0%, #8e8e93 100%)',
+      'linear-gradient(90deg, var(--color-status-inactive) 0%, var(--color-status-inactive) 100%)',
     );
   });
 

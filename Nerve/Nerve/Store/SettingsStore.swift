@@ -313,9 +313,7 @@ final class SettingsStore {
     }
 
     /// Remote machines configured in Settings (SSH Host alias + tunnel). Local Mac is implicit.
-    var machines: [MachineConfig] {
-        didSet { persist() }
-    }
+    var machines: [MachineConfig]
 
     private let defaults = UserDefaults.standard
     private let key = "nerve.settings.v5"
@@ -578,27 +576,6 @@ final class SettingsStore {
 
     /// Replace the tunnel list from concrete Hosts in `~/.ssh/config`.
     /// Keeps enabled / autoConnect / remoteIngestPort / id when the alias is unchanged.
-    func refreshMachinesFromLocalSSH() {
-        let hosts = SSHConfigWriter.loadLocalHosts()
-        let previous = Dictionary(uniqueKeysWithValues: machines.map { ($0.alias, $0) })
-        machines = hosts.map { host in
-            if let old = previous[host.alias] {
-                var m = host.asMachineConfig(
-                    remoteIngestPort: old.remoteIngestPort,
-                    enabled: old.enabled,
-                    autoConnect: old.autoConnect
-                )
-                m.id = old.id
-                return m
-            }
-            return host.asMachineConfig(
-                remoteIngestPort: NerveEndpoint.port,
-                enabled: false,
-                autoConnect: false
-            )
-        }
-    }
-
     /// macOS Accessibility → Display → Reduce motion (live, not sticky prefs).
     var systemReduceMotionActive: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -643,7 +620,7 @@ final class SettingsStore {
             ribbonThickness: ribbonThickness,
             panelWidth: panelWidth,
             panelHeight: panelHeight,
-            machines: machines
+            machines: nil
         )
         if let data = try? JSONEncoder().encode(value) {
             defaults.set(data, forKey: key)

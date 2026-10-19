@@ -65,6 +65,7 @@ Verify / test (each is standalone):
   --verify-vscode      VS Code surface unit tests (status / frame / focus)
   --vscode             watch the VS Code extension (F5 in a vsc-ext window)
   --test-swift         swiftc unit harness for Hub frame types
+  --check-plugin       reject forbidden plugin package files
   --check-windows      compile the portable crates for Windows (no linker needed)
 
   node scripts/capture-vscode-surface.mjs  capture the VS Code surface screenshot
@@ -104,6 +105,7 @@ EOF
 }
 
 nerve_build_rust() {
+  python3 -B "$ROOT/scripts/check-plugin.py"
   cd "$ROOT"
   cargo build --workspace --release
   echo "Built: $ROOT/target/release/nerve-hub"
@@ -236,7 +238,7 @@ nerve_verify_surface() {
     echo "ok: reusing the hub already holding the port"
   else
     nerve_hub_log="$(mktemp "${TMPDIR:-/tmp}/nerve-verify-surface.XXXXXX")"
-    "$hub" serve --grace-secs "$grace_secs" >"$nerve_hub_log" 2>&1 &
+    "$hub" serve >"$nerve_hub_log" 2>&1 &
     nerve_hub_pid=$!
 
     if ! nerve_wait_health "$nerve_hub_pid" 100; then
@@ -337,7 +339,7 @@ nerve_verify_tmux() {
 
   echo "== hub on :17890 (grace ${grace_secs}s) =="
   nerve_hub_log="$(mktemp "${TMPDIR:-/tmp}/nerve-verify-tmux.XXXXXX")"
-  "$hub" serve --grace-secs "$grace_secs" >"$nerve_hub_log" 2>&1 &
+  "$hub" serve >"$nerve_hub_log" 2>&1 &
   nerve_hub_pid=$!
 
   if ! nerve_wait_health "$nerve_hub_pid" "$ticks_health"; then
@@ -453,9 +455,7 @@ nerve_test_swift() {
   while IFS= read -r f; do sources+=("$f"); done < <(find Nerve/Nerve/Models -name '*.swift' | sort)
   sources+=(
     "Nerve/Nerve/Services/Hub/HubFrame.swift"
-    "Nerve/Nerve/Services/Hub/FrameDiffer.swift"
     # Local action semantics: which machine a job runs on, and where Open goes.
-    "Nerve/Nerve/Services/SSHConfigWriter.swift"
     "Nerve/Nerve/Services/ActionService.swift"
     "$test_file"
   )
@@ -542,17 +542,8 @@ nerve_demo_surfaces() {
   [[ -x "$hub" && -x "$helper" ]] || nerve_fail "demo surface binaries were not built"
 
   echo "== local hub + demo state =="
-  if curl -sf "$NERVE_BASE/v1/health" >/dev/null 2>&1; then
-    echo "ok: reusing the hub already on :17890"
-  else
-    nohup "$hub" serve --grace-secs 600 >"$hub_log" 2>&1 </dev/null &
-    local demo_hub_pid=$!
-    if ! nerve_wait_health "$demo_hub_pid" 100; then
-      cat "$hub_log" >&2 || true
-      nerve_fail "demo hub never answered /v1/health"
-    fi
-    echo "ok: started demo hub (pid $demo_hub_pid, log $hub_log)"
-  fi
+  "$hub" ensure || nerve_fail "hub ensure failed"
+  echo "ok: resident hub ready"
   curl -sf -X POST "$NERVE_BASE/v1/snapshot" \
     -H 'Content-Type: application/json' \
     --data @"$NERVE_SURFACE_FIXTURE" >/dev/null || nerve_fail "surface demo snapshot failed"
@@ -642,6 +633,7 @@ while [[ $# -gt 0 ]]; do
     --check-windows) DO_CHECK_WINDOWS=1 ;;
     --vscode) DO_VSCODE=1 ;;
     --test-swift) DO_TEST_SWIFT=1 ;;
+    --check-plugin) python3 -B "$ROOT/scripts/check-plugin.py"; exit $? ;;
     -h|--help) nerve_usage; exit 0 ;;
     *)
       echo "unknown option: $1" >&2

@@ -45,7 +45,7 @@ pub fn is_remote_client(command: &str) -> bool {
 /// Reads the same process-table snapshot the pane scan uses, so an ssh pane
 /// does not cost a second `ps`.
 pub fn destination_on_tty(tty: &str) -> Option<String> {
-    crate::procs::ProcTable::current().destination_on_tty(tty)
+    crate::procs::ProcTable::with_current(|table| table.destination_on_tty(tty))
 }
 
 /// The destination in one `ps` line, or `None` if that line is not a session

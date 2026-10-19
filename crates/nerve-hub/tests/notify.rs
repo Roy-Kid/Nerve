@@ -21,15 +21,15 @@ use nerve_hub::clock::FakeClock;
 use nerve_hub::state::{JobStore, PidProbe, PidState};
 
 const MACHINE_ALIAS: &str = "test-mac";
-const LONG_GRACE: Duration = Duration::from_secs(3_600);
 const FRAME_WAIT: Duration = Duration::from_secs(2);
 
 fn runtime() -> HubRuntime {
     let clock = Arc::new(FakeClock::new(datetime!(2026-07-19 00:00:00 UTC)));
-    HubRuntime::new(
-        JobStore::new(clock, MACHINE_ALIAS.to_string(), Arc::new(EveryPidAlive)),
-        LONG_GRACE,
-    )
+    HubRuntime::new(JobStore::new(
+        clock,
+        MACHINE_ALIAS.to_string(),
+        Arc::new(EveryPidAlive),
+    ))
 }
 
 struct EveryPidAlive;
@@ -180,7 +180,7 @@ async fn test_put_notify_rejects_unknown_policy() {
 }
 
 #[tokio::test]
-async fn test_labelled_stream_elects_macos_over_tether() {
+async fn test_labelled_stream_elects_macos_over_vscode() {
     let runtime = runtime();
     let address = serve(&runtime).await;
 
@@ -189,30 +189,30 @@ async fn test_labelled_stream_elects_macos_over_tether() {
     assert_eq!(first["notify"]["owner"], "macos");
     assert_eq!(first["notify"]["policy"], "single");
 
-    let mut tether = SseClient::connect(address, "?surface=tether").await;
-    let tether_frame = tether.until(|frame| frame["notify"]["watchers"] == 2).await;
-    assert_eq!(tether_frame["notify"]["owner"], "macos");
-    let surfaces = tether_frame["notify"]["surfaces"]
+    let mut vscode = SseClient::connect(address, "?surface=vscode").await;
+    let vscode_frame = vscode.until(|frame| frame["notify"]["watchers"] == 2).await;
+    assert_eq!(vscode_frame["notify"]["owner"], "macos");
+    let surfaces = vscode_frame["notify"]["surfaces"]
         .as_array()
         .expect("surfaces");
     assert!(surfaces.iter().any(|value| value == "macos"));
-    assert!(surfaces.iter().any(|value| value == "tether"));
+    assert!(surfaces.iter().any(|value| value == "vscode"));
 
     let updated = macos.until(|frame| frame["notify"]["watchers"] == 2).await;
     assert_eq!(updated["notify"]["owner"], "macos");
 }
 
 #[tokio::test]
-async fn test_dropping_macos_hands_the_lease_to_tether() {
+async fn test_dropping_macos_hands_the_lease_to_vscode() {
     let runtime = runtime();
     let address = serve(&runtime).await;
 
     let macos = SseClient::connect(address, "?surface=macos").await;
-    let mut tether = SseClient::connect(address, "?surface=tether").await;
-    let _ = tether.until(|frame| frame["notify"]["watchers"] == 2).await;
+    let mut vscode = SseClient::connect(address, "?surface=vscode").await;
+    let _ = vscode.until(|frame| frame["notify"]["watchers"] == 2).await;
     drop(macos);
-    let frame = tether
-        .until(|frame| frame["notify"]["owner"] == "tether" && frame["notify"]["watchers"] == 1)
+    let frame = vscode
+        .until(|frame| frame["notify"]["owner"] == "vscode" && frame["notify"]["watchers"] == 1)
         .await;
-    assert_eq!(frame["notify"]["owner"], "tether");
+    assert_eq!(frame["notify"]["owner"], "vscode");
 }

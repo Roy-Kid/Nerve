@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo-512.png" alt="Nerve" width="160" />
+  <img src="assets/logo.png" alt="Nerve" width="160" />
 </p>
 
 # Nerve
@@ -51,8 +51,10 @@ plugins/nerve/          Marketplace hooks (Claude Node, Codex Python, Grok HTTP)
 crates/nerve-hub/       Hub daemon (+ Grok HTTP mapper at POST /v1/hook)
 Nerve/                  macOS menu-bar app (surface)
 crates/                 Rust: nerve-hub daemon + nerve-tmux-surface helper
+surfaces/macos/         macOS menu-bar UI package
+surfaces/tether/        Tether plugin package
 surfaces/tmux/          tmux plugin surface (TPM entry)
-surfaces/tether/        Tether plugin surface (compile-time Swift package)
+testing/tether/        Tether model and host integration tests
 vsc-ext/                VS Code / Cursor surface (status bar + Activity Bar)
 index/                  Marketing site + /docs SPA
 fixtures/ · scripts/ · assets/

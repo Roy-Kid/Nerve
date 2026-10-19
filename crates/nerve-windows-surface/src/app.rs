@@ -28,7 +28,7 @@ use crate::flyout::anchor::{Rect, place_scaled};
 use crate::flyout::view::{PanelAction, PanelState};
 use crate::flyout::visibility::Visibility;
 use crate::flyout::{fonts, theme as panel_theme, view as panel};
-use crate::notify::policy::{AskPolicy, Settings as NotifySettings};
+
 use crate::notify::toast::{Toaster, WindowsToaster};
 use crate::platform::{autostart, theme as system_theme};
 use crate::settings::{Settings, settings_path};
@@ -63,7 +63,6 @@ pub struct App {
     menu_events: Receiver<MenuEvent>,
     tray_rect: Option<Rect>,
 
-    notifier: AskPolicy,
     toaster: WindowsToaster,
     toast_clicks: Receiver<String>,
 
@@ -126,7 +125,6 @@ impl App {
             tray_events,
             menu_events,
             tray_rect: None,
-            notifier: AskPolicy::new(),
             toaster,
             toast_clicks,
             note: None,
@@ -166,19 +164,17 @@ impl App {
 
     /// Ask the policy whether this frame is worth interrupting for.
     fn notify(&mut self) {
-        let snapshot = self.store.snapshot();
-        let settings = NotifySettings {
-            enabled: self.settings.toasts_enabled
-                && !snapshot.offline
-                && snapshot.notify.may_interrupt("windows"),
-            sound: self.settings.toast_sound,
-            floor: self.settings.toast_floor,
-        };
-        for toast in self
-            .notifier
-            .evaluate(&snapshot.jobs, settings, Instant::now())
-        {
-            self.toaster.show(&toast);
+        self.store.configure_notifications(serde_json::json!({"enabled":self.settings.toasts_enabled,"sound":self.settings.toast_sound,
+            "floor":match self.settings.toast_floor { nerve_surface_core::frame::AttentionLevel::Urgent => 4, nerve_surface_core::frame::AttentionLevel::Required => 3, _ => 2 }}));
+        for event in self.store.drain_notifications() {
+            let delivered = self.toaster.show(&crate::notify::policy::Toast {
+                title: event.title,
+                body: event.body,
+                job_id: event.job_id,
+                tag: event.id.clone(),
+                sound: event.sound,
+            });
+            self.store.notification_result(event.id, delivered);
         }
     }
 
@@ -341,7 +337,7 @@ impl EframeApp for App {
             }
         }
 
-        let action = {
+        let action = if self.visibility.visible {
             if let Some((note, at)) = &self.note
                 && at.elapsed() < Duration::from_secs(3)
             {
@@ -358,14 +354,21 @@ impl EframeApp for App {
                 self.theme,
                 OffsetDateTime::now_utc(),
             )
+        } else {
+            None
         };
         if let Some(action) = action {
             self.act(action, ctx);
         }
 
-        // Polling rather than waking on frames: the redraw gate makes a poll
-        // that changes nothing free, and the reader owns the socket either way.
-        ctx.request_repaint_after(POLL);
+        // The flyout lays out only while it is open. Hidden, the timer still
+        // refreshes the tray and Ask toasts, just not four times a second.
+        let interval = if self.visibility.visible {
+            POLL
+        } else {
+            Duration::from_secs(1)
+        };
+        ctx.request_repaint_after(interval);
     }
 }
 

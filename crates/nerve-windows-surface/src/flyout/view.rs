@@ -42,7 +42,7 @@ pub fn show(
     now: OffsetDateTime,
 ) -> Option<PanelAction> {
     let mut action = None;
-    let tally = Tally::of(&snapshot.jobs);
+    let tally = snapshot.summary.tally();
     let sections = sections::of(&snapshot.jobs, group_mode, StatusFilter::default(), now);
     let painted = sections::painted_order(&snapshot.jobs, &sections);
 
@@ -51,7 +51,7 @@ pub fn show(
     if !runs.is_empty() {
         strip.on_hover_text(
             runs.iter()
-                .map(|run| format!("{} {}", run.count, run.class.label()))
+                .map(|run| format!("{} {}", run.count, run.class.title()))
                 .collect::<Vec<_>>()
                 .join(" · "),
         );
@@ -73,7 +73,7 @@ pub fn show(
             if !section.title.is_empty() {
                 ui.add_space(4.0);
                 ui.label(
-                    RichText::new(section.title.to_uppercase())
+                    RichText::new(section.title.as_str())
                         .color(secondary(theme))
                         .small(),
                 );

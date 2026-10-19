@@ -140,7 +140,7 @@ impl FrameSource for FakeSource {
         self.reads.set(self.reads.get() + 1);
         match self.steps.pop_front() {
             Some(Step::Frame(raw)) => {
-                let frame = Frame::decode(raw).expect("fixture frame must decode");
+                let frame = nerve_surface_core::testkit::frame(raw);
                 Ok(Some(frame))
             }
             Some(Step::Close) | None => Ok(None),

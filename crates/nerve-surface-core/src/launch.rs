@@ -1,204 +1,115 @@
-//! Bringing a hub up, at most once per window.
-//!
-//! Every arm of [`Launch`] is fail-open: none is an error the caller may turn
-//! into a non-zero exit. A missing hub, a refused spawn and a throttled retry
-//! all mean the same thing to tmux — the segment shows the offline placeholder
-//! and the user's tmux is untouched.
-//!
-//! The throttle exists because a hub that will not come up must not be fired at
-//! the OS on every reconnect. A hub that *is* up is never spawned at all:
-//! health is consulted first, so the one this surface started a second ago is
-//! recognised rather than duplicated.
-
-use std::fmt;
-use std::path::Path;
-use std::process::{Child, Command, Stdio};
-use std::time::Duration;
-
-use time::OffsetDateTime;
-
+//! Bootstrap adapter. Singleton probing, spawning and readiness belong to ensure.
 use crate::hub::Hub;
-
-/// How long a spawn attempt suppresses the next one.
-pub const THROTTLE: Duration = Duration::from_secs(10);
-
-/// The hub's health endpoint.
-const HEALTH_PATH: &str = "/v1/health";
-
-/// The one subcommand `nerve-hub` understands (`crates/nerve-hub/src/cli.rs`).
-const SERVE_ARGS: [&str; 1] = ["serve"];
-
-/// `GET http://127.0.0.1:17890/v1/health` — is a hub already serving?
+use std::{
+    fmt,
+    path::Path,
+    process::{Command, Stdio},
+};
 pub trait HealthProbe {
     fn is_serving(&self) -> bool;
 }
-
-/// Start a detached process. **Arg array only** — there is no shell anywhere in
-/// this crate.
 pub trait ProcessSpawner {
     fn spawn(&mut self, program: &Path, args: &[&str]) -> Result<(), SpawnError>;
 }
-
-/// Injected wall clock, as in `crates/nerve-hub/src/clock.rs`.
-pub trait Clock {
-    fn now(&self) -> OffsetDateTime;
-}
-
-/// Why the OS refused to start the hub.
 #[derive(Debug)]
 pub struct SpawnError(String);
-
 impl SpawnError {
     pub fn new(message: impl Into<String>) -> Self {
         Self(message.into())
     }
 }
-
 impl fmt::Display for SpawnError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }
-
 impl std::error::Error for SpawnError {}
-
-/// What [`HubLauncher::ensure`] did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Launch {
-    /// A hub already answers `/v1/health`; nothing was spawned.
     AlreadyServing,
-    /// A hub was started; it is not serving yet.
     Spawned,
-    /// Health is down, but the last attempt is younger than [`THROTTLE`].
-    Throttled,
-    /// No `nerve-hub` binary anywhere.
     Missing,
-    /// The binary is there and the OS refused to start it.
     Failed,
 }
-
 impl Launch {
-    /// Whether the surface paints the offline placeholder rather than a live
-    /// segment.
     pub fn is_offline(self) -> bool {
-        !matches!(self, Self::AlreadyServing)
+        matches!(self, Self::Missing | Self::Failed)
     }
 }
-
-/// Decides whether a hub needs starting, and starts at most one per window.
-pub struct HubLauncher<S: ProcessSpawner, C: Clock, H: HealthProbe> {
+pub struct HubLauncher<S: ProcessSpawner, H: HealthProbe> {
     spawner: S,
-    clock: C,
     health: H,
-    last_attempt: Option<OffsetDateTime>,
+    pub last_error: Option<String>,
 }
-
-impl<S: ProcessSpawner, C: Clock, H: HealthProbe> HubLauncher<S, C, H> {
-    pub fn new(spawner: S, clock: C, health: H) -> Self {
+impl<S: ProcessSpawner, H: HealthProbe> HubLauncher<S, H> {
+    pub fn new(spawner: S, health: H) -> Self {
         Self {
             spawner,
-            clock,
             health,
-            last_attempt: None,
+            last_error: None,
         }
     }
-
-    /// Make sure a hub is serving, if this machine has one to serve.
-    ///
-    /// A spawn — successful or refused — records the attempt. [`Launch::Missing`]
-    /// does not, so a hub installed a second later starts a second later.
     pub fn ensure(&mut self, hub: Option<&Path>) -> Launch {
-        if self.health.is_serving() {
-            return Launch::AlreadyServing;
-        }
-        let Some(hub) = hub else {
-            return Launch::Missing;
+        self.last_error = None;
+        let Some(program) = hub else {
+            return if self.health.is_serving() {
+                Launch::AlreadyServing
+            } else {
+                Launch::Missing
+            };
         };
-
-        let now = self.clock.now();
-        if self
-            .last_attempt
-            .is_some_and(|last| (now - last).unsigned_abs() < THROTTLE)
-        {
-            return Launch::Throttled;
-        }
-
-        self.last_attempt = Some(now);
-        match self.spawner.spawn(hub, &SERVE_ARGS) {
+        match self.spawner.spawn(program, &["ensure"]) {
             Ok(()) => Launch::Spawned,
-            Err(_) => Launch::Failed,
+            Err(e) => {
+                self.last_error = Some(e.to_string());
+                Launch::Failed
+            }
         }
     }
 }
-
-/// The clock the binary injects.
-pub struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> OffsetDateTime {
-        OffsetDateTime::now_utc()
-    }
-}
-
-/// The health probe the binary injects: one `GET /v1/health`.
 pub struct HttpHealth {
     hub: Hub,
 }
-
 impl HttpHealth {
     pub fn new(hub: Hub) -> Self {
         Self { hub }
     }
 }
-
 impl HealthProbe for HttpHealth {
     fn is_serving(&self) -> bool {
-        self.hub.get(HEALTH_PATH).is_ok()
+        self.hub
+            .get("/v1/health")
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .is_some_and(|v| v["service"] == "nerve" && v["protocolVersion"] == 2)
     }
 }
-
-/// The spawner the binary injects.
-///
-/// The hub is started with its streams closed so it can outlive this process
-/// without holding tmux's pane open. It is *not* put in a session of its own:
-/// that needs `setsid`, and `unsafe` is forbidden workspace-wide. Nothing here
-/// depends on it — a hub that dies with its terminal is simply started again by
-/// the next surface, which is the same fail-open path as a hub that never ran.
-pub struct DetachedSpawner {
-    /// The hub this process started, kept only to be reaped.
-    started: Option<Child>,
-}
-
+pub struct DetachedSpawner;
 impl DetachedSpawner {
     pub fn new() -> Self {
-        Self { started: None }
+        Self
     }
 }
-
 impl Default for DetachedSpawner {
     fn default() -> Self {
-        Self::new()
+        Self
     }
 }
-
 impl ProcessSpawner for DetachedSpawner {
     fn spawn(&mut self, program: &Path, args: &[&str]) -> Result<(), SpawnError> {
-        // A hub we started and that has since exited would otherwise sit in the
-        // process table until this surface exits.
-        if let Some(started) = self.started.as_mut()
-            && matches!(started.try_wait(), Ok(Some(_)))
-        {
-            self.started = None;
-        }
-
-        let child = Command::new(program)
+        let output = Command::new(program)
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|err| SpawnError::new(err.to_string()))?;
-        self.started = Some(child);
-        Ok(())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| SpawnError::new(e.to_string()))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(SpawnError::new(
+                String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+            ))
+        }
     }
 }

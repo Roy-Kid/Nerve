@@ -538,6 +538,7 @@ struct StatusPanelView: View {
 
     private var emptyState: some View {
         VStack(spacing: 12) {
+            if let error=store.hubError {Text(error).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center)}
             Image(systemName: store.connectionAvailable ? "waveform.path.ecg" : "wifi.slash")
                 .font(.largeTitle).foregroundStyle(.secondary)
             Text(store.connectionAvailable ? (store.hasSeenJobs ? "No active conversations" : "Connect your first agent")
