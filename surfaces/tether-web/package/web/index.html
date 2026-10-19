@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Nerve</title><link rel="stylesheet" href="style.css"></head>
+<body><header><svg aria-label="Nerve" viewBox="0 0 24 24"><path d="M2 12h4l3-8 5 16 3-8h5"/></svg><span id="connection" role="status">Offline</span><span id="count">0</span><button id="scope" title="All machines" aria-label="All machines" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M3 5h18v12H3zM8 21h8M12 17v4"/></svg></button><button id="reconnect" title="Reconnect" aria-label="Reconnect"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2 7M20 4v7h-7"/></svg></button></header>
+<main><input id="query" type="search" aria-label="Find a job" placeholder="Find a job…"><div id="ribbon" aria-label="Job status totals"></div><div id="problem" role="status"></div><div id="jobs"></div><div id="empty">No jobs</div></main>
+<script type="module" src="app.mjs"></script></body></html>
