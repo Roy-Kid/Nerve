@@ -63,15 +63,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // MenuBarExtra(.window) does not honor label context menus — install AppKit bridge.
         let bridge = MenuBarExtraContextMenuBridge { [weak self] in
-            guard let self else { return }
-            PreferencesWindowController.show(
-                store: self.model.store,
-                settings: self.model.settings,
-                tunnels: self.model.tunnels
-            )
+            self?.showSettings()
         }
         bridge.start()
         ribbonContextMenu = bridge
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURL(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+    }
+
+    /// `nerve://settings` from Tether. Same window as the ribbon's Settings….
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard urls.contains(where: Self.isSettingsURL) else { return }
+        showSettings()
+    }
+
+    func showSettings() {
+        PreferencesWindowController.show(
+            store: model.store,
+            settings: model.settings,
+            tunnels: model.tunnels
+        )
+    }
+
+    @objc private func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
+        guard let text = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+              let url = URL(string: text), Self.isSettingsURL(url) else { return }
+        showSettings()
+    }
+
+    private static func isSettingsURL(_ url: URL) -> Bool {
+        url.scheme?.caseInsensitiveCompare("nerve") == .orderedSame
+            && url.host?.caseInsensitiveCompare("settings") == .orderedSame
+            && (url.path.isEmpty || url.path == "/")
+            && url.query == nil
     }
 
     func applicationWillTerminate(_ notification: Notification) {

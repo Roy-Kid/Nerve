@@ -12,6 +12,12 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     var onOpenJob: ((String) -> Void)?
     /// Best-effort show the status panel after a banner click.
     var onRevealPanel: (() -> Void)?
+    /// Authorization is known, including after the system prompt. The hub
+    /// client pushes eligibility again so an Ask is not stuck behind the
+    /// first "not determined" answer.
+    var onAuthorizationSettled: (() -> Void)?
+    /// Runs after the launch prompt, on the main actor.
+    var onPermissionPromptFinished: (() -> Void)?
 
     init(settings: SettingsStore) {
         self.settings = settings
@@ -19,27 +25,78 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         center.delegate = self
     }
 
-    func requestAuthorizationIfNeeded() {
+    /// First launch asks for permission. A menu-bar app only gets the system
+    /// dialog while it is briefly a regular app. After a denial, macOS will
+    /// not ask again, so the prompt opens System Settings instead.
+    func explainPermissionIfNeeded() {
         center.getNotificationSettings { [weak self] settings in
             let authorizationStatus = settings.authorizationStatus
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                switch authorizationStatus {
-                case .notDetermined:
-                    do {
-                        let granted = try await self.center.requestAuthorization(options: [.alert, .sound, .badge])
-                        if !granted {
-                            NerveLog.notify.error("notification auth: user denied")
-                        }
-                    } catch {
-                        NerveLog.notify.error("notification auth: \(String(describing: error), privacy: .public)")
-                    }
-                case .denied:
-                    NerveLog.notify.error("notifications denied — enable in System Settings → Notifications → Nerve")
-                default:
-                    break
-                }
+                await self.explain(authorizationStatus)
+                self.onPermissionPromptFinished?()
             }
+        }
+    }
+
+    private func explain(_ authorizationStatus: UNAuthorizationStatus) async {
+        NerveLog.record("notification auth status=\(authorizationStatus.rawValue)")
+        if authorizationStatus == .notDetermined {
+            await requestSystemPrompt()
+            settings.hasExplainedNotificationPermission = true
+            onAuthorizationSettled?()
+            return
+        }
+        if authorizationStatus == .denied, !settings.hasExplainedNotificationPermission {
+            NerveLog.record("notification auth denied")
+            offerSystemSettings()
+            settings.hasExplainedNotificationPermission = true
+        }
+        onAuthorizationSettled?()
+    }
+
+    private func requestSystemPrompt() async {
+        let previous = NSApp.activationPolicy()
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        defer { NSApp.setActivationPolicy(previous) }
+        do {
+            let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+            NerveLog.record("notification auth granted=\(granted)")
+            if !granted {
+                NerveLog.notify.error("notification auth: user denied")
+            }
+        } catch {
+            NerveLog.record("notification auth error=\(error.localizedDescription)")
+            NerveLog.notify.error("notification auth: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func offerSystemSettings() {
+        let previous = NSApp.activationPolicy()
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        defer { NSApp.setActivationPolicy(previous) }
+        let alert = NSAlert()
+        alert.messageText = "Allow notifications"
+        alert.informativeText = "Nerve banners you when an agent needs you, fails, or finishes a long task. Turn on notifications for Nerve in System Settings."
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Not Now")
+        if alert.runModal() == .alertFirstButtonReturn {
+            Self.openNotificationSettings()
+        }
+    }
+
+    static func openNotificationSettings() {
+        let bundle = Bundle.main.bundleIdentifier ?? "app.nerve.Nerve"
+        let candidates = [
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(bundle)",
+            "x-apple.systempreferences:com.apple.preference.notifications?id=\(bundle)",
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
+        ]
+        for raw in candidates {
+            guard let url = URL(string: raw), NSWorkspace.shared.open(url) else { continue }
+            return
         }
     }
 

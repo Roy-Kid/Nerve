@@ -4,17 +4,17 @@ import SwiftUI
 
 @MainActor
 @Observable
-final class AppModel {
-    let store: JobStore
-    let settings: SettingsStore
-    let tunnels: MachineTunnelManager
+public final class AppModel {
+    public let store: JobStore
+    public let settings: SettingsStore
+    public let tunnels: MachineTunnelManager
     private let hubClient: HubClient
     private let hubProcessManager: HubProcessManager
     private var notifications: NotificationService?
     private var coach: FirstRunCoachController?
     private var started = false
 
-    init() {
+    public init() {
         let settings = SettingsStore()
         let store = JobStore()
         let tunnels = MachineTunnelManager()
@@ -41,15 +41,20 @@ final class AppModel {
             self?.hubClient.setNotifyPolicy(policy)
         }
         tunnels.attach(settings: settings)
+        settings.onNotificationSettingsChanged = { [weak self] in
+            Task { await self?.hubClient.configureNotifications() }
+        }
     }
 
-    func start() {
+    public func start() {
         guard !started else { return }
         started = true
 
         let notifications = NotificationService(settings: settings)
         self.notifications = notifications
-        notifications.requestAuthorizationIfNeeded()
+        notifications.onAuthorizationSettled = { [weak self] in
+            Task { await self?.hubClient.configureNotifications() }
+        }
         notifications.onOpenJob = { [weak self] jobId in
             self?.openJobFromNotification(jobId)
         }
@@ -85,6 +90,13 @@ final class AppModel {
 
         tunnels.start()
 
+        notifications.onPermissionPromptFinished = { [weak self] in
+            self?.presentCoachIfNeeded()
+        }
+        notifications.explainPermissionIfNeeded()
+    }
+
+    private func presentCoachIfNeeded() {
         if !settings.hasSeenCoachMarks {
             let coach = FirstRunCoachController()
             self.coach = coach
@@ -161,7 +173,7 @@ final class AppModel {
         tunnels.syncConfig()
     }
 
-    func quit() {
+    public func quit() {
         guard started else { return }
         started = false
         tunnels.stopAll()

@@ -37,11 +37,22 @@ final class RibbonAmbientClock: ObservableObject {
 
 /// MenuBarExtra label — pure SwiftUI `Canvas` (always visible) + class-owned timer
 /// for ambient frames. `NSViewRepresentable` in the status item often paints blank.
-struct MenuBarRibbonLabel: View {
+public struct MenuBarRibbonLabel: View {
     @Bindable var store: JobStore
     @Bindable var settings: SettingsStore
+    /// Menu-bar slot is 22pt and holds 120pt while jobs are active.
+    /// A host status row uses the ribbon's own width at 14pt instead.
+    private let compact: Bool
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var clock = RibbonAmbientClock()
+
+    public init(store: JobStore, settings: SettingsStore, compact: Bool = false) {
+        self.store = store
+        self.settings = settings
+        self.compact = compact
+    }
+
+    private var canvasHeight: CGFloat { compact ? 14 : 22 }
 
     private var animate: Bool { settings.effectiveAnimationsEnabled }
 
@@ -58,7 +69,7 @@ struct MenuBarRibbonLabel: View {
 
     private var phase: TimeInterval { ambientActive ? clock.phase : 0 }
 
-    var body: some View {
+    public var body: some View {
         // Observe ambient ticks while motion is on, and every hub write so
         // MenuBarExtra cannot keep a frozen ribbon after a frame arrives.
         let _ = clock.tick
@@ -67,7 +78,11 @@ struct MenuBarRibbonLabel: View {
             // Explicit frame keeps MenuBarExtra from collapsing a zero-size label.
             // Reserve a stable slot while visible and pin the ribbon to its
             // right edge, so it expands left without moving its menu-bar anchor.
-            .frame(width: slotWidth, height: 22, alignment: .trailing)
+            .frame(
+                width: compact ? preferredWidth : slotWidth,
+                height: canvasHeight,
+                alignment: compact ? .center : .trailing
+            )
             .animation(animate ? .easeInOut(duration: 0.28) : nil, value: visualSignature)
             .contentShape(Rectangle())
             .accessibilityLabel("Nerve")
@@ -80,8 +95,8 @@ struct MenuBarRibbonLabel: View {
     /// Same `Image(size:)` path that painted the ribbon before the NSView attempt.
     private var ribbonImage: Image {
         let width = max(14, preferredWidth)
-        let height: CGFloat = 22
-        let barHeight = min(18, max(3, CGFloat(settings.ribbonThickness)))
+        let height = canvasHeight
+        let barHeight = min(height - 4, max(3, CGFloat(settings.ribbonThickness)))
         let rect = CGRect(
             x: 2,
             y: (height - barHeight) / 2,

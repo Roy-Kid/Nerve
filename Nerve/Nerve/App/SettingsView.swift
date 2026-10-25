@@ -595,7 +595,7 @@ struct PreferencesView: View {
                         Text("One surface (recommended)").tag("single")
                         Text("Every surface").tag("all")
                     }
-                    .help("The hub elects one owner when macOS Nerve and VS Code are both connected, so the same Ask is not bannered twice.")
+                    .help("The hub elects one owner when more than one Nerve surface is connected, so the same Ask is not bannered twice. The menu bar comes before Tether.")
                     if let owner = store.notify.owner, store.notify.policy == .single {
                         Text("Current owner: \(owner)")
                             .font(.caption)

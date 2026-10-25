@@ -40,6 +40,9 @@ struct ExpandableSubjectRow: View {
     var childTimelines: [String: [TimelineEntry]] = [:]
     var onToggle: () -> Void
     var onToggleChild: ((String) -> Void)? = nil
+    /// Click the row: show the terminal window this job is running in.
+    var onJump: () -> Void
+    var onJumpChild: ((Job) -> Void)? = nil
     var onAction: (String) -> Void
     var onChildAction: ((String, Job) -> Void)? = nil
 
@@ -78,27 +81,26 @@ struct ExpandableSubjectRow: View {
                     )
                 )
 
-                Button(action: onToggle) {
+                Button(action: onJump) {
                     HStack(spacing: 8) {
                         ForEach(visibleColumns) { column in
                             columnCell(column)
                         }
-
-                        Text(subject.statusLabel)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(RibbonPalette.color(for: subject.status, scheme: colorScheme, map: settings.statusColors))
-                            .lineLimit(1)
-                            .frame(width: 76, alignment: .leading)
-
-                        PanelChrome.symbol("chevron.right", weight: .semibold)
-                            .foregroundStyle(.quaternary)
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                            .frame(width: PanelChrome.hit, height: PanelChrome.hit)
-                            .accessibilityHidden(true)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help(ActionService.focusActionTitle(for: subject))
+                Button(action: onToggle) {
+                    PanelChrome.symbol("chevron.right", weight: .semibold)
+                        .foregroundStyle(.quaternary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .frame(width: PanelChrome.hit, height: PanelChrome.hit)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(expandHint)
+                .accessibilityLabel("Details")
                 if subject.status == .attention,
                    let action = subject.actions.first(where: { ActionService.isOpenKind($0.kind) }) {
                     PanelIconButton(
@@ -163,6 +165,7 @@ struct ExpandableSubjectRow: View {
                             isKeyboardFocused: false,
                             timeline: childTimelines[child.id] ?? [],
                             onToggle: { onToggleChild?(child.id) },
+                            onJump: { onJumpChild?(child) },
                             onAction: { actionId in
                                 onChildAction?(actionId, child)
                             }

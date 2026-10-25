@@ -4,10 +4,10 @@ import SwiftUI
 // MARK: - Window
 
 @MainActor
-final class PreferencesWindowController: NSWindowController {
+public final class PreferencesWindowController: NSWindowController {
     private static var shared: PreferencesWindowController?
 
-    static func show(
+    public static func show(
         store: JobStore,
         settings: SettingsStore,
         tunnels: MachineTunnelManager,

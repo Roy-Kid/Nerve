@@ -39,18 +39,13 @@ struct PanelIconButton: View {
     }
 }
 
-private enum PanelConfirmation: Identifiable {
-    case clearAll
-    case destructiveAction(actionId: String, jobId: String, title: String, producer: String)
+private struct PanelConfirmation: Identifiable {
+    let actionId: String
+    let jobId: String
+    let title: String
+    let producer: String
 
-    var id: String {
-        switch self {
-        case .clearAll:
-            return "clear-all"
-        case let .destructiveAction(actionId, jobId, _, _):
-            return "\(jobId):\(actionId)"
-        }
-    }
+    var id: String { "\(jobId):\(actionId)" }
 }
 
 /// Status list shown under the menu-bar ribbon.
@@ -138,8 +133,8 @@ struct StatusPanelView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Nerve status panel")
-        // Inline confirmation only — SwiftUI `.alert` / `.confirmationDialog` often fail
-        // to present (or stick) inside MenuBarExtra `.window`, so the trash button looked dead.
+        // Destructive row actions confirm inline. SwiftUI `.alert` / `.confirmationDialog`
+        // often fail to present inside MenuBarExtra `.window`. Clear does not ask.
         .onAppear { store.panelOpen = true }
         .onDisappear {
             store.panelOpen = false
@@ -231,21 +226,32 @@ struct StatusPanelView: View {
         }
     }
 
+    /// Icon-only pull-down. The menu itself is the system menu (checkmark on the
+    /// current mode). A caption label plus the menu chevron sat beside the other
+    /// 28pt icons and read as a second, mismatched control.
     private var groupModeButton: some View {
         @Bindable var settings = settings
         return Menu {
             Picker("Group by", selection: $settings.panelGroupMode) {
-                ForEach(PanelGroupMode.allCases, id: \.self) { mode in
+                ForEach(PanelGroupMode.allCases) { mode in
                     Text(mode.title).tag(mode)
                 }
             }
+            .pickerStyle(.inline)
+            .labelsHidden()
         } label: {
-            Label(settings.panelGroupMode.title, systemImage: "line.3.horizontal.decrease")
-                .font(.caption)
+            PanelChrome.symbol("line.3.horizontal.decrease")
+                .foregroundStyle(Color.primary.opacity(0.75))
+                .frame(width: PanelChrome.hit, height: PanelChrome.hit)
+                .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
-        .help("Choose how to group conversations")
+        .frame(width: PanelChrome.hit, height: PanelChrome.hit)
+        .help("Group by \(settings.panelGroupMode.title)")
+        .accessibilityLabel("Group by")
+        .accessibilityValue(settings.panelGroupMode.title)
     }
 
     private var refreshButton: some View {
@@ -260,22 +266,15 @@ struct StatusPanelView: View {
     }
 
     private var clearButton: some View {
-        let isArmed = {
-            if case .clearAll = confirmation { return true }
-            return false
-        }()
-        return headerIconButton(
-            systemName: isArmed ? "trash.fill" : "trash",
-            help: isArmed
-                ? "Confirm clear — use the bar below, or click again to cancel"
-                : "Clear all jobs from memory",
-            accessibilityLabel: isArmed ? "Clear all (confirming)" : "Clear all",
-            accessibilityHint: isArmed
-                ? "Confirmation bar is open below the header"
-                : "Removes all jobs from the panel",
-            emphasized: isArmed
+        headerIconButton(
+            systemName: "trash",
+            help: "Clear all jobs from memory",
+            accessibilityLabel: "Clear all",
+            accessibilityHint: "Removes all jobs from the panel"
         ) {
-            confirmClearAll()
+            expandedId = nil
+            confirmation = nil
+            store.clearAll()
         }
         .disabled(store.activeJobs.isEmpty)
     }
@@ -300,15 +299,6 @@ struct StatusPanelView: View {
 
     private func refreshPresentation() {
         store.refreshFromHub()
-    }
-
-    private func confirmClearAll() {
-        // Toggle: second click cancels if the bar is already open for clear-all.
-        if case .clearAll = confirmation {
-            confirmation = nil
-            return
-        }
-        confirmation = .clearAll
     }
 
     /// Confirmation lives in the panel — system alerts are unreliable in MenuBarExtra windows.
@@ -342,9 +332,9 @@ struct StatusPanelView: View {
             .keyboardShortcut(.cancelAction)
 
             PanelIconButton(
-                systemName: confirmationConfirmSymbol(item),
-                help: confirmationConfirmLabel(item),
-                accessibilityLabel: confirmationConfirmLabel(item),
+                systemName: "checkmark",
+                help: "Confirm",
+                accessibilityLabel: "Confirm",
                 emphasized: true
             ) {
                 performConfirmed(item)
@@ -359,49 +349,15 @@ struct StatusPanelView: View {
     }
 
     private func confirmationTitle(_ item: PanelConfirmation) -> String {
-        switch item {
-        case .clearAll:
-            return "Clear all jobs?"
-        case let .destructiveAction(_, _, title, _):
-            return title
-        }
+        item.title
     }
 
     private func confirmationMessage(_ item: PanelConfirmation) -> String {
-        switch item {
-        case .clearAll:
-            return "Removes every job and timeline from memory."
-        case let .destructiveAction(_, _, title, producer):
-            return "Run “\(title)”? Provided by \(producer)."
-        }
-    }
-
-    private func confirmationConfirmLabel(_ item: PanelConfirmation) -> String {
-        switch item {
-        case .clearAll:
-            return "Clear"
-        case .destructiveAction:
-            return "Confirm"
-        }
-    }
-
-    private func confirmationConfirmSymbol(_ item: PanelConfirmation) -> String {
-        switch item {
-        case .clearAll:
-            return "trash.fill"
-        case .destructiveAction:
-            return "checkmark"
-        }
+        "Run “\(item.title)”? Provided by \(item.producer)."
     }
 
     private func performConfirmed(_ item: PanelConfirmation) {
-        switch item {
-        case .clearAll:
-            expandedId = nil
-            store.clearAll()
-        case let .destructiveAction(actionId, jobId, _, _):
-            _ = store.performAction(actionId: actionId, jobId: jobId, confirmed: true)
-        }
+        _ = store.performAction(actionId: item.actionId, jobId: item.jobId, confirmed: true)
         confirmation = nil
     }
 
@@ -519,6 +475,8 @@ struct StatusPanelView: View {
                                         }
                                     }
                                 },
+                                onJump: { reveal(job) },
+                                onJumpChild: { reveal($0) },
                                 onAction: { actionId in
                                     handleAction(actionId: actionId, subject: job)
                                 },
@@ -576,10 +534,21 @@ struct StatusPanelView: View {
             .accessibilityHidden(true)
     }
 
+    private func reveal(_ subject: Job) {
+        store.selectedJobId = subject.id
+        let result = ActionService.openLocation(subject)
+        switch result {
+        case .succeeded(let message), .failed(let message), .denied(let message), .pending(let message):
+            actionFeedback = message
+        case .unsupported:
+            actionFeedback = "No window to open."
+        }
+    }
+
     private func handleAction(actionId: String, subject: Job) {
         guard let action = subject.actions.first(where: { $0.id == actionId }) else { return }
         if ActionService.isDestructive(action) {
-            confirmation = .destructiveAction(
+            confirmation = PanelConfirmation(
                 actionId: actionId,
                 jobId: subject.id,
                 title: action.title,
@@ -596,11 +565,16 @@ struct StatusPanelView: View {
     }
 }
 
-struct StatusPanelRoot: View {
+public struct StatusPanelRoot: View {
     @Bindable var store: JobStore
     @Bindable var settings: SettingsStore
 
-    var body: some View {
+    public init(store: JobStore, settings: SettingsStore) {
+        self.store = store
+        self.settings = settings
+    }
+
+    public var body: some View {
         StatusPanelView()
             .environment(store)
             .environment(settings)

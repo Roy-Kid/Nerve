@@ -27,7 +27,7 @@ enum PanelGroup: String, CaseIterable, Identifiable {
 /// so the hub stays the single writer.
 @MainActor
 @Observable
-final class JobStore {
+public final class JobStore {
     private(set) var jobs: [String: Job] = [:]
     private(set) var timelines: [String: [TimelineEntry]] = [:]
 

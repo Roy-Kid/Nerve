@@ -4,7 +4,7 @@ import Observation
 /// A cache and command adapter for hub-owned machine connections.
 @MainActor
 @Observable
-final class MachineTunnelManager {
+public final class MachineTunnelManager {
     private(set) var linkState: [UUID: MachineLinkState] = [:]
     private(set) var lastError: [UUID: String] = [:]
     private weak var settings: SettingsStore?

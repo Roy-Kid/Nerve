@@ -157,7 +157,7 @@ struct StatusColorMap: Codable, Equatable, Sendable {
 
 @MainActor
 @Observable
-final class SettingsStore {
+public final class SettingsStore {
     /// Fired after any preference that affects the menu-bar ribbon image/length.
     /// Set by AppModel so grouping / size / color changes redraw immediately
     /// without depending on a particular SwiftUI view still being alive.
@@ -206,24 +206,29 @@ final class SettingsStore {
         }
     }
 
-    var notificationsPaused: Bool { didSet { persist() } }
-    var notifyRequired: Bool { didSet { persist() } }
-    var notifyUrgent: Bool { didSet { persist() } }
-    var notifyFailure: Bool { didSet { persist() } }
-    var notifyUnresponsive: Bool { didSet { persist() } }
-    var notifyLongSuccess: Bool { didSet { persist() } }
-    var notificationSoundEnabled: Bool { didSet { persist() } }
-    var longTaskSuccessThresholdSeconds: TimeInterval { didSet { persist() } }
-    var mutedSourceIds: Set<String> { didSet { persist() } }
-    var mutedProjectIds: Set<String> { didSet { persist() } }
+    var notificationsPaused: Bool { didSet { pushNotificationSettings() } }
+    var notifyRequired: Bool { didSet { pushNotificationSettings() } }
+    var notifyUrgent: Bool { didSet { pushNotificationSettings() } }
+    var notifyFailure: Bool { didSet { pushNotificationSettings() } }
+    var notifyUnresponsive: Bool { didSet { pushNotificationSettings() } }
+    var notifyLongSuccess: Bool { didSet { pushNotificationSettings() } }
+    var notificationSoundEnabled: Bool { didSet { pushNotificationSettings() } }
+    var longTaskSuccessThresholdSeconds: TimeInterval { didSet { pushNotificationSettings() } }
+    var mutedSourceIds: Set<String> { didSet { pushNotificationSettings() } }
+    var mutedProjectIds: Set<String> { didSet { pushNotificationSettings() } }
 
     /// Do-not-disturb schedule (local calendar minutes from midnight).
-    var dndEnabled: Bool { didSet { persist() } }
-    var dndStartMinutes: Int { didSet { persist() } }
-    var dndEndMinutes: Int { didSet { persist() } }
+    var dndEnabled: Bool { didSet { pushNotificationSettings() } }
+    var dndStartMinutes: Int { didSet { pushNotificationSettings() } }
+    var dndEndMinutes: Int { didSet { pushNotificationSettings() } }
+
+    /// Hub eligibility. Wired by AppModel; nil while settings are loading.
+    var onNotificationSettingsChanged: (() -> Void)?
 
     var hasCompletedFirstRun: Bool { didSet { persist() } }
     var hasSeenCoachMarks: Bool { didSet { persist() } }
+    /// The launch prompt that asks for notification permission has been shown.
+    var hasExplainedNotificationPermission: Bool { didSet { persist() } }
     /// Status panel section grouping (priority / status / source).
     /// Also drives how the menu-bar ribbon is segmented and ordered.
     var panelGroupMode: PanelGroupMode {
@@ -315,13 +320,25 @@ final class SettingsStore {
     /// Remote machines configured in Settings (SSH Host alias + tunnel). Local Mac is implicit.
     var machines: [MachineConfig]
 
-    private let defaults = UserDefaults.standard
+    /// Nerve.app writes this domain as `UserDefaults.standard`. A host with
+    /// another bundle id uses the same suite, so both show one panel setup.
+    private let defaults: UserDefaults = {
+        let suite = "app.nerve.Nerve"
+        if Bundle.main.bundleIdentifier == suite { return .standard }
+        return UserDefaults(suiteName: suite) ?? .standard
+    }()
     private let key = "nerve.settings.v5"
     private var isLoading = true
 
     private func notifyRibbonAppearance() {
         guard !isLoading else { return }
         ribbonAppearanceSink?()
+    }
+
+    private func pushNotificationSettings() {
+        persist()
+        guard !isLoading else { return }
+        onNotificationSettingsChanged?()
     }
 
     static let defaultRibbonLengthScale: Double = 1.0
@@ -399,6 +416,7 @@ final class SettingsStore {
         dndEndMinutes = 8 * 60
         hasCompletedFirstRun = false
         hasSeenCoachMarks = false
+        hasExplainedNotificationPermission = false
         panelGroupMode = .priority
         panelMemberVisibility = .attention
         ribbonRootsOnly = true
@@ -409,13 +427,13 @@ final class SettingsStore {
         panelHeight = Self.defaultPanelHeight
         machines = []
 
-        if let data = UserDefaults.standard.data(forKey: key),
+        if let data = defaults.data(forKey: key),
            let p = try? JSONDecoder().decode(Persisted.self, from: data) {
             apply(p)
-        } else if let data = UserDefaults.standard.data(forKey: "nerve.settings.v4"),
+        } else if let data = defaults.data(forKey: "nerve.settings.v4"),
                   let p = try? JSONDecoder().decode(Persisted.self, from: data) {
             apply(p)
-        } else if let data = UserDefaults.standard.data(forKey: "nerve.settings.v3"),
+        } else if let data = defaults.data(forKey: "nerve.settings.v3"),
                   let p = try? JSONDecoder().decode(PersistedV3.self, from: data) {
             applyV3(p)
         }
@@ -450,6 +468,7 @@ final class SettingsStore {
         dndEndMinutes = p.dndEndMinutes
         hasCompletedFirstRun = p.hasCompletedFirstRun
         hasSeenCoachMarks = p.hasSeenCoachMarks
+        hasExplainedNotificationPermission = p.hasExplainedNotificationPermission ?? false
         if let mode = p.panelGroupMode {
             panelGroupMode = mode
         } else {
@@ -612,6 +631,7 @@ final class SettingsStore {
             dndEndMinutes: dndEndMinutes,
             hasCompletedFirstRun: hasCompletedFirstRun,
             hasSeenCoachMarks: hasSeenCoachMarks,
+            hasExplainedNotificationPermission: hasExplainedNotificationPermission,
             panelGroupMode: panelGroupMode,
             panelMemberVisibility: panelMemberVisibility,
             ribbonRootsOnly: ribbonRootsOnly,
@@ -658,6 +678,7 @@ final class SettingsStore {
         var dndEndMinutes: Int
         var hasCompletedFirstRun: Bool
         var hasSeenCoachMarks: Bool
+        var hasExplainedNotificationPermission: Bool?
         var panelGroupMode: PanelGroupMode?
         var panelMemberVisibility: PanelMemberVisibility?
         var ribbonRootsOnly: Bool?
@@ -690,6 +711,7 @@ final class SettingsStore {
         var dndEndMinutes: Int
         var hasCompletedFirstRun: Bool
         var hasSeenCoachMarks: Bool
+        var hasExplainedNotificationPermission: Bool?
         var panelGroupMode: PanelGroupMode?
     }
 }
