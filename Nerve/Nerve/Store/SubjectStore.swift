@@ -16,6 +16,21 @@ enum PanelGroup: String, CaseIterable, Identifiable {
     }
 }
 
+/// Status the row dot already shows. The panel does not write it again.
+enum StatusPhrase {
+    private static let phrases: Set<String> = [
+        "active", "actived", "turn complete", "turn completed",
+        "needs you", "needs attention", "running", "completed",
+        "waiting", "problem", "monitor", "ready / idle", "ready",
+        "approval needed", "input needed", "review needed", "decision needed",
+    ]
+
+    static func isStatus(_ raw: String) -> Bool {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return phrases.contains(value)
+    }
+}
+
 /// Read-only client cache of what `nerve-hub` publishes, plus the display
 /// derivations the menu-bar ribbon and status panel read.
 ///
@@ -51,6 +66,8 @@ public final class JobStore {
     private(set) var pendingActions: [PendingActionRequest] = []
     /// Read-only hub notification policy metadata.
     private(set) var notify: NotifyLease = .empty
+    /// The hub's status per terminal, as the last frame published it.
+    var tabIndicators: [HubTabIndicator] = []
 
     private let clock: () -> Date
 

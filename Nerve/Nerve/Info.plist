@@ -33,6 +33,8 @@
 	</array>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Nerve selects the Terminal tab running your task when you click its row.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Nerve. Local-first status hub.</string>
 	<key>NSPrincipalClass</key>

@@ -9,7 +9,13 @@
   "ageRating": "4+",
   "link": "https://github.com/Roy-Kid/Nerve",
   "permissions": ["network"],
-  "networkURLs": ["http://127.0.0.1:17890/v1/stream?surface=tether"],
+  "networkURLs": [
+    "http://127.0.0.1:17890/v1/stream?surface=tether",
+    "http://127.0.0.1:17890/v1/stream?surface=tether&instanceId=tether&notifications=true",
+    "http://127.0.0.1:17890/v1/refresh",
+    "http://127.0.0.1:17890/v1/clear"
+  ],
+  "settingsURL": "nerve://settings",
   "contributions": [
     {"kind": "panel", "id": "panel/jobs"},
     {"kind": "statusBar", "id": "status/jobs"},

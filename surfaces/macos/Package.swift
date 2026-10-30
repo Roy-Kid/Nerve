@@ -23,5 +23,6 @@ let package = Package(
         ".DS_Store",
       ]
     ),
+    .testTarget(name: "NerveMacTests", dependencies: ["NerveMac"]),
   ]
 )

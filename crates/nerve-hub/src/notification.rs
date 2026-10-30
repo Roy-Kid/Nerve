@@ -61,18 +61,23 @@ impl Notifications {
                 ("longSuccess", if success { 3 } else { 0 }),
             ] {
                 let key = (id.to_owned(), kind.to_owned());
-                next.insert(key.clone(), rank);
                 let fired = (id.to_owned(), kind.to_owned(), rank);
-                if rank < 2
-                    || self.previous.get(&key).copied().unwrap_or(0) >= rank
-                    || self.fired.contains_key(&fired)
-                {
+                let previous = self.previous.get(&key).copied().unwrap_or(0);
+                if rank < 2 || previous >= rank || self.fired.contains_key(&fired) {
+                    next.insert(key, rank);
                     continue;
                 }
                 let targets = roster.targets(job, rank, kind);
-                if !targets.is_empty() {
-                    self.fired.insert(fired, now);
+                if targets.is_empty() {
+                    // Nobody could show it. Keep the old rank so the next frame
+                    // still sees a rise once a surface is eligible.
+                    if let Some(old) = self.previous.get(&key) {
+                        next.insert(key.clone(), *old);
+                    }
+                    continue;
                 }
+                self.fired.insert(fired, now);
+                next.insert(key, rank);
                 for (target, connection, sound) in targets {
                     self.sequence += 1;
                     let name = job["name"].as_str().unwrap_or("Task");

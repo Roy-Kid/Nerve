@@ -350,7 +350,7 @@ enum PanelColumn: String, Codable, CaseIterable, Identifiable, Sendable, Hashabl
         }
     }
 
-    /// Fixed width for non-flexible columns — same across every row.
+    /// Ideal width. The name stops growing here; activity has no ideal.
     var width: CGFloat {
         switch self {
         case .name: return 108
@@ -361,6 +361,30 @@ enum PanelColumn: String, Codable, CaseIterable, Identifiable, Sendable, Hashabl
         case .updated: return 72
         }
     }
+
+    /// Narrowest this column may be before the row is tighter than the panel.
+    /// A locked 108pt name on the 340pt panel left activity a few characters wide.
+    var minWidth: CGFloat {
+        switch self {
+        case .name: return 72
+        case .summary: return 96
+        case .updated: return 56
+        default: return width
+        }
+    }
+
+    var maxWidth: CGFloat {
+        switch self {
+        case .name: return 108
+        case .summary: return .infinity
+        case .updated: return width
+        default: return isFlexible ? .infinity : width
+        }
+    }
+
+    /// Activity keeps its width. The name and the time give way, and the
+    /// full string stays on hover.
+    var layoutPriority: Double { isFlexible ? 1 : 0 }
 
     static let defaultColumns: [PanelColumn] = [.name, .summary, .updated]
 

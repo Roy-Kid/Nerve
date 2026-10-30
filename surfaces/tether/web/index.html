@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src http://127.0.0.1:17890; base-uri 'none'; form-action 'none'">
   <title>Nerve</title>
   <link rel="stylesheet" href="panel.css">
   <script src="model.js" defer></script>
@@ -11,20 +11,38 @@
 </head>
 <body>
   <header>
-    <span class="name">Nerve</span>
-    <span id="connection" class="dot connection" data-status="waiting" role="status" aria-label="Connecting to Nerve hub" title="Connecting to Nerve hub"></span>
-    <nav id="filters" aria-label="Filter jobs"></nav>
-    <button id="search-toggle" class="icon-button" aria-label="Search jobs" title="Search jobs · ⌘/Ctrl F" aria-expanded="false" aria-controls="search-box">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25"/><path d="m10.25 10.25 3 3"/></svg>
+    <span id="connection" class="metric" data-status="waiting" role="status" aria-label="Connecting to Nerve hub" title="Connecting to Nerve hub">
+      <svg class="fill" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.15a6.85 6.85 0 1 0 0 13.7 6.85 6.85 0 0 0 0-13.7zM6.7 5.15c0-.4.44-.64.78-.43l4.15 2.55a.5.5 0 0 1 0 .86L7.48 10.7a.5.5 0 0 1-.78-.43V5.15z"/></svg>
+      <span id="running-count">—</span>
+    </span>
+    <span id="attention" class="metric" data-status="attention" hidden>
+      <svg class="fill" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.15a6.85 6.85 0 1 0 0 13.7 6.85 6.85 0 0 0 0-13.7zM7.2 4.7h1.6v4.15H7.2V4.7zm.8 6.55a.95.95 0 1 1 0-1.9.95.95 0 0 1 0 1.9z"/></svg>
+      <span id="attention-count"></span>
+    </span>
+    <span class="spacer"></span>
+    <span class="group" title="Group by Machine">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.2 4.2h11.6M2.2 8h8M2.2 11.8h5"/></svg>
+      <select id="group" aria-label="Group by Machine" title="Group by Machine">
+        <option value="machine">Machine</option>
+        <option value="priority">Priority</option>
+        <option value="status">Status</option>
+      </select>
+    </span>
+    <button id="refresh" class="icon-button" aria-label="Refresh" title="Ask the hub to reap dead jobs and republish">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.4-3.4"/><path d="M13 2.6V6h-3.4"/></svg>
     </button>
-    <button id="retry" class="icon-button" aria-label="Reconnect to Nerve hub" title="Reconnect to Nerve hub" hidden>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.5 6A5 5 0 1 0 13 9M12.5 2.5V6H9"/></svg>
+    <button id="clear" class="icon-button" aria-label="Clear all" title="Clear all jobs from memory">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 4.4h9.6M6.2 4.3V3h3.6v1.3M4.4 4.4l.55 8.2h6.1l.55-8.2M6.7 6.6v4M9.3 6.6v4"/></svg>
     </button>
   </header>
+  <p id="note" class="note" hidden>
+    <span id="note-label"></span>
+    <button id="retry" type="button" aria-label="Reconnect to Nerve hub">Retry</button>
+  </p>
   <div id="search-box" hidden>
     <input id="search" type="search" aria-label="Search jobs" autocomplete="off" spellcheck="false">
   </div>
   <main id="jobs" aria-label="Agent jobs"></main>
-  <div id="empty" class="empty" role="status" aria-label="Connecting to Nerve hub" title="Connecting to Nerve hub"><span class="dot" data-status="waiting" aria-hidden="true"></span></div>
+  <div id="empty" class="empty" role="status" title="Connecting to Nerve hub"><span class="dot" data-status="waiting" aria-hidden="true"></span><p>Connecting to Nerve hub</p></div>
 </body>
 </html>

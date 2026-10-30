@@ -14,14 +14,14 @@ public final class AppModel {
     private var coach: FirstRunCoachController?
     private var started = false
 
-    public init() {
+    public init(surface: String = "macos") {
         let settings = SettingsStore()
         let store = JobStore()
         let tunnels = MachineTunnelManager()
         self.settings = settings
         self.store = store
         self.tunnels = tunnels
-        self.hubClient = HubClient(store: store)
+        self.hubClient = HubClient(store: store, surface: surface)
         self.hubProcessManager = HubProcessManager()
         store.settingsProvider = { [weak self] in
             self?.settings ?? SettingsStore()

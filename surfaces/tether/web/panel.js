@@ -3,19 +3,29 @@
   const model = globalThis.NerveModel;
   const bridge = globalThis.tether;
   const background = bridge?.background;
-  const endpoint = 'http://127.0.0.1:17890/v1/stream?surface=tether';
+  const endpoint = 'http://127.0.0.1:17890/v1/stream?surface=tether&instanceId=tether&notifications=true';
+  const deliveredNotes = new Set();
   let instance, revision = -1, stream;
   let summary = {}, current = [], machines = [], filter = 'all', phase = 'connecting';
   let indicators = [];
   let disposed = false, pending = false, retry = null, delay = 1000;
-  const rows = new Map(), headings = new Map();
+  const rows = new Map(), headings = new Map(), blanks = new Map();
   const container = document.getElementById('jobs');
   const empty = document.getElementById('empty');
   const connection = document.getElementById('connection');
+  const runningCount = document.getElementById('running-count');
+  const attentionChip = document.getElementById('attention');
+  const attentionCount = document.getElementById('attention-count');
   const retryButton = document.getElementById('retry');
-  const searchToggle = document.getElementById('search-toggle');
+  const note = document.getElementById('note');
+  const noteLabel = document.getElementById('note-label');
   const searchBox = document.getElementById('search-box');
   const search = document.getElementById('search');
+  const refreshButton = document.getElementById('refresh');
+  const clearButton = document.getElementById('clear');
+  const groupControl = document.querySelector('.group');
+  const groupSelect = document.getElementById('group');
+  let groupMode = 'machine';
   const phases = {
     connecting: ['waiting', 'Connecting to Nerve hub'],
     live: ['success', 'Connected'],
@@ -51,27 +61,89 @@
     node.title = date.toLocaleString();
     return node;
   }
+  // Same clock the macOS row uses: endedAt, else startedAt, else updatedAt.
+  // Abbreviated like the panel ("41 min ago"), not a clock time.
+  function rowInstant(job) {
+    if (job.lifecycle === 'ended' && job.endedAt) return job.endedAt;
+    return job.startedAt || job.updatedAt || '';
+  }
+  function relativePhrase(value) {
+    const date = new Date(value);
+    const ms = date.getTime();
+    if (!Number.isFinite(ms)) return '';
+    const seconds = Math.round((Date.now() - ms) / 1000);
+    const abs = Math.abs(seconds);
+    const unit = abs < 45 ? [abs, 'sec']
+      : abs < 3600 ? [Math.round(abs / 60), 'min']
+      : abs < 86400 ? [Math.round(abs / 3600), 'hr']
+      : abs < 86400 * 7 ? [Math.round(abs / 86400), 'day']
+      : [Math.round(abs / (86400 * 7)), 'wk'];
+    return seconds < 0 ? `in ${unit[0]} ${unit[1]}` : `${unit[0]} ${unit[1]} ago`;
+  }
+  function chevron() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M6 3.5 11 8 6 12.5');
+    svg.append(path);
+    return svg;
+  }
+  function openJob(job) {
+    if (!bridge) return;
+    const place = model.jump(job);
+    const payload = {};
+    if (place.target) payload.target = place.target;
+    if (place.directory) payload.directory = place.directory;
+    if (place.url) payload.url = place.url;
+    if (!payload.target && !payload.directory && !payload.url) return;
+    bridge.call('host.focus', payload).catch(() => {});
+  }
   function renderRow(job, offline) {
     let row = rows.get(job.id);
     if (!row) {
-      row = element('details', 'row');
+      row = element('div', 'row');
       row.dataset.jobId = job.id;
-      const toggle = element('summary', '');
-      toggle.append(circle(job.status), element('span', 'title'));
-      row.append(toggle, element('div', 'row-content'));
+      const jump = element('button', 'jump');
+      jump.type = 'button';
+      const when = element('time', 'when');
+      jump.append(circle('inactive'), element('span', 'name'), element('span', 'activity'), when, element('span', 'state'));
+      jump.addEventListener('click', () => { if (row.job) openJob(row.job); });
+      const more = element('details', 'more');
+      const disclosure = element('summary', 'chevron');
+      disclosure.setAttribute('aria-label', 'Details');
+      disclosure.append(chevron());
+      more.append(disclosure, element('div', 'row-content'));
+      row.append(jump, more);
       rows.set(job.id, row);
     }
+    row.job = job;
     row.classList.toggle('offline', offline);
-    const toggle = row.firstElementChild;
+    const jump = row.firstElementChild;
     const label = [job.name || job.id, job.display.statusLabel,
       job.display.machineLabel, offline ? 'Machine offline · last snapshot' : '',
-      phase !== 'live' ? phases[phase][1] : ''].filter(Boolean).join(' · ');
-    toggle.title = label;
-    toggle.setAttribute('aria-label', label);
-    toggle.firstElementChild.dataset.status = job.status;
-    toggle.lastElementChild.textContent = job.name || job.id;
-    // Keep native disclosure and focused summary nodes alive across snapshots.
-    const content = row.lastElementChild;
+      phase !== 'live' ? phases[phase][1] : '', 'Open session'].filter(Boolean).join(' · ');
+    jump.title = label;
+    jump.setAttribute('aria-label', label);
+    jump.dataset.status = job.status;
+    jump.querySelector('.dot').dataset.status = job.status;
+    jump.querySelector('.name').textContent = job.name || job.id;
+    jump.querySelector('.activity').textContent = model.activity(job);
+    const when = jump.querySelector('.when');
+    const instant = rowInstant(job);
+    const parsed = instant ? new Date(instant) : null;
+    if (parsed && Number.isFinite(parsed.getTime())) {
+      when.dateTime = parsed.toISOString();
+      when.title = parsed.toLocaleString();
+      when.textContent = relativePhrase(instant);
+    } else {
+      when.removeAttribute('datetime');
+      when.title = '';
+      when.textContent = '';
+    }
+    jump.querySelector('.state').textContent = job.display.statusLabel || '';
+    // Keep the disclosure and a focused jump alive across snapshots.
+    const content = row.lastElementChild.lastElementChild;
     const detailKey = JSON.stringify([model.activity(job), job.producer, job.location, job.updatedAt, job.timeline]);
     if (row.detailKey !== detailKey) {
       row.detailKey = detailKey;
@@ -100,48 +172,53 @@
       }
       content.replaceChildren(...nodes);
     }
+    row.lastElementChild.hidden = !(Array.isArray(job.timeline) && job.timeline.length);
     return row;
   }
   function render() {
     if (background) return;
     document.body.dataset.connection = phase;
     const [status, label] = phases[phase];
-    connection.dataset.status = status;
+    connection.dataset.status = phase === 'live' ? 'running' : status;
     connection.title = label;
     connection.setAttribute('aria-label', label);
-    retryButton.hidden = phase === 'live' || phase === 'connecting' || phase === 'unavailable';
+    const tallies = model.tallies(current, machines);
+    const running = tallies.running;
+    const attention = tallies.attention;
+    runningCount.textContent = phase === 'live' ? String(running) : '—';
+    attentionChip.hidden = !(phase === 'live' && attention > 0);
+    attentionCount.textContent = String(attention);
+    attentionChip.title = attention + ' need attention';
+    const quiet = phase === 'live' || phase === 'connecting' || phase === 'unavailable';
+    note.hidden = quiet;
+    noteLabel.textContent = quiet ? '' : label;
+    clearButton.disabled = current.length === 0;
     container.classList.toggle('stale', phase !== 'live');
     container.setAttribute('aria-label', phase === 'live' ? 'Agent jobs' : 'Agent jobs · last valid snapshot');
     const selected = model.select(current, filter, search.value);
-    const groups = new Map();
-    for (const job of selected) {
-      const id = job.display.machineGroup;
-      if (!groups.has(id)) groups.set(id, { label: job.display.machineLabel, jobs: [] });
-      groups.get(id).jobs.push(job);
-    }
-    if (filter === 'all' && !search.value.trim()) {
-      for (const machine of machines) {
-        const id = machine.machineId || machine.id;
-        if (!groups.has(id)) groups.set(id, { label: machine.host || id, jobs: [] });
-      }
-    }
+    const grouped = model.sections(
+      selected, groupMode, machines,
+      groupMode === 'machine' && filter === 'all' && !search.value.trim()
+    );
+    const groups = new Map(grouped.map(section => [section.id, section]));
     const active = document.activeElement;
     const focusedID = active?.closest('.row')?.dataset.jobId;
-    const oldIndex = [...container.querySelectorAll('summary')].indexOf(active);
+    const oldIndex = [...container.querySelectorAll('.jump')].indexOf(active);
     const nodes = [];
-    for (const [id, group] of groups) {
+    for (const section of grouped) {
+      const id = section.id;
+      let heading = headings.get(id);
+      if (!heading) { heading = element('div', 'machine'); headings.set(id, heading); }
       const machine = machines.find(value => value.machineId === id || value.id === id);
-      const offline = machine ? machine.state !== 'connected' : group.jobs.some(job => job.display.sourceOnline === false);
-      if (groups.size > 1 || offline) {
-        let heading = headings.get(id);
-        if (!heading) { heading = element('div', 'machine'); headings.set(id, heading); }
-        heading.textContent = group.label || id;
-        heading.title = machine ? [machine.host, machine.state, machine.error].filter(Boolean).join(' · ')
-          : offline ? 'Machine offline · last snapshot' : group.label;
-        if (offline) heading.prepend(circle('inactive'));
-        nodes.push(heading);
+      heading.textContent = section.title || id;
+      heading.title = machine ? [machine.host, machine.state, machine.error].filter(Boolean).join(' · ') : section.title;
+      nodes.push(heading);
+      if (section.jobs.length === 0) {
+        let blank = blanks.get(id);
+        if (!blank) { blank = element('p', 'group-empty', 'No jobs on this machine'); blanks.set(id, blank); }
+        nodes.push(blank);
       }
-      for (const job of group.jobs) nodes.push(renderRow(job, offline));
+      for (const job of section.jobs) nodes.push(renderRow(job, false));
     }
     // Reconcile only changed positions so SSE refreshes do not steal focus.
     let cursor = container.firstElementChild;
@@ -152,17 +229,18 @@
     while (cursor) { const next = cursor.nextElementSibling; cursor.remove(); cursor = next; }
     for (const id of rows.keys()) if (!current.some(job => job.id === id)) rows.delete(id);
     for (const id of headings.keys()) if (!groups.has(id)) headings.delete(id);
+    for (const id of blanks.keys()) if (!groups.has(id) || groups.get(id).jobs.length) blanks.delete(id);
     if (focusedID && !container.contains(document.activeElement)) {
-      const toggles = [...container.querySelectorAll('summary')];
+      const toggles = [...container.querySelectorAll('.jump')];
       const target = rows.get(focusedID)?.isConnected ? rows.get(focusedID).firstElementChild
         : toggles[Math.min(Math.max(oldIndex, 0), toggles.length - 1)];
-      (target || searchToggle).focus({ preventScroll: true });
+      if (target) target.focus({ preventScroll: true });
     }
-    empty.hidden = selected.length > 0 || nodes.length > 0;
-    const message = phase !== 'live' ? label : current.length ? 'No matching jobs' : 'No active jobs · waiting for agent events';
+    empty.hidden = nodes.length > 0;
+    const message = phase !== 'live' ? label : model.listEmptyCopy(filter, search.value, current.length);
     empty.title = message;
-    empty.setAttribute('aria-label', message);
-    empty.firstElementChild.dataset.status = phase !== 'live' ? status : 'inactive';
+    empty.querySelector('p').textContent = nodes.length ? '' : message;
+    empty.querySelector('.dot').dataset.status = phase !== 'live' ? status : 'inactive';
   }
   function report() {
     if (background) {
@@ -207,6 +285,9 @@
       instance = frame.hubInstanceId; revision = frame.revision;
       current = jobs; summary = frame.summary || {}; machines = Array.isArray(frame.machines) ? frame.machines : [];
       indicators = nextIndicators;
+      for (const note of model.takeNotifications(frame, 'tether', deliveredNotes)) {
+        bridge.call('host.notify', { title: note.title, body: note.body }).catch(() => {});
+      }
       clearTimeout(retry); retry = null;
       phase = 'live'; delay = 1000; render(); report();
     } catch (error) {
@@ -214,46 +295,52 @@
       render(); report();
     }
   };
-  for (const [index, status] of ['all', ...model.order].entries()) {
-    const button = element('button', 'filter');
-    button.dataset.filter = status;
-    button.title = index === 0 ? 'All jobs' : model.labels[index - 1];
-    button.setAttribute('aria-label', button.title);
-    button.setAttribute('aria-pressed', String(status === filter));
-    button.append(circle(status));
-    button.addEventListener('click', () => {
-      filter = filter === status ? 'all' : status;
-      for (const other of document.querySelectorAll('[data-filter]')) other.setAttribute('aria-pressed', String(other.dataset.filter === filter));
-      render();
-    });
-    document.getElementById('filters').append(button);
+  function postHub(path) {
+    const url = 'http://127.0.0.1:17890' + path;
+    // The page cannot fetch. Tether blocks every http load; the host posts
+    // only to a URL the manifest already granted.
+    if (bridge) return bridge.call('network.post', { url });
+    return fetch(url, { method: 'POST', mode: 'no-cors' });
   }
-  searchToggle.addEventListener('click', () => {
-    searchBox.hidden = !searchBox.hidden;
-    searchToggle.setAttribute('aria-expanded', String(!searchBox.hidden));
-    if (!searchBox.hidden) search.focus();
-    else { search.value = ''; render(); }
+  function applyGroupLabel() {
+    const title = model.groupModes.find(mode => mode.id === groupMode)?.title || 'Machine';
+    const label = 'Group by ' + title;
+    groupSelect.setAttribute('aria-label', label);
+    groupSelect.title = label;
+    groupControl.title = label;
+  }
+  refreshButton.addEventListener('click', () => {
+    postHub('/v1/refresh').catch(() => { refreshButton.title = 'Could not reach Nerve hub'; });
+  });
+  clearButton.addEventListener('click', () => {
+    if (clearButton.disabled) return;
+    postHub('/v1/clear').catch(() => { note.hidden = false; noteLabel.textContent = 'Could not reach Nerve hub'; });
+  });
+  groupSelect.addEventListener('change', () => {
+    groupMode = model.groupModes.some(mode => mode.id === groupSelect.value) ? groupSelect.value : 'machine';
+    applyGroupLabel();
+    render();
   });
   search.addEventListener('input', render);
   retryButton.addEventListener('click', () => { clearTimeout(retry); retry = null; delay = 1000; connect(); });
   document.addEventListener('keydown', event => {
+    if (event.target === groupSelect) return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
-      event.preventDefault(); searchBox.hidden = false;
-      searchToggle.setAttribute('aria-expanded', 'true'); search.focus(); search.select(); return;
+      event.preventDefault(); searchBox.hidden = false; search.focus(); search.select(); return;
     }
     if (event.key === 'Escape') {
       if (search.value) { search.value = ''; render(); }
-      else if (!searchBox.hidden) { searchBox.hidden = true; searchToggle.setAttribute('aria-expanded', 'false'); searchToggle.focus(); }
+      else if (!searchBox.hidden) { searchBox.hidden = true; search.blur(); }
       else {
         const row = document.activeElement?.closest('details[open]');
         if (!row) return;
-        row.open = false; row.firstElementChild.focus();
+        row.open = false; row.parentElement?.querySelector('.jump')?.focus();
       }
       event.preventDefault(); event.stopPropagation(); return;
     }
     if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key) || event.target === search
       || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-    const toggles = [...container.querySelectorAll('summary')];
+    const toggles = [...container.querySelectorAll('.jump')];
     if (!toggles.length) return;
     const index = toggles.indexOf(document.activeElement);
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? toggles.length - 1

@@ -55,9 +55,9 @@ struct StatusPanelView: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.compactPanel) private var compactPanel
     @FocusState private var listFocused: Bool
     @State private var showingSetup = false
-    @State private var actionFeedback: String?
     @State private var expandedId: String?
     @State private var confirmation: PanelConfirmation?
     @State private var resizeOrigin: CGSize?
@@ -78,21 +78,15 @@ struct StatusPanelView: View {
                     .foregroundStyle(.secondary)
                     .padding(10)
             }
-            if let actionFeedback {
-                Text(actionFeedback).font(.caption).padding(.horizontal, 12).padding(.bottom, 6)
-            }
             if let confirmation {
                 confirmationBar(confirmation)
             }
             thinDivider
             statusBody
         }
-        .frame(
-            width: renderedPanelSize.width,
-            height: renderedPanelSize.height,
-            alignment: .topLeading
-        )
+        .modifier(PanelSizing(compact: compactPanel, size: renderedPanelSize))
         .overlay(alignment: .bottomTrailing) {
+            if !compactPanel {
             // Three diagonal lines — classic corner resize grip (not bidirectional arrows).
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 9, weight: .semibold))
@@ -104,9 +98,11 @@ struct StatusPanelView: View {
                 .gesture(resizeGesture)
                 .help("Resize panel")
                 .accessibilityLabel("Resize panel")
+            }
         }
         // Host window bridge: re-pins origin after every layout pass during resize.
-        .background(PanelWindowBridge(anchor: resizeAnchor))
+        // A host that fits the panel to its rows has its own window.
+        .background { if !compactPanel { PanelWindowBridge(anchor: resizeAnchor) } }
         // Keep ↑/↓ keyboard focus without the system blue focus ring around the panel.
         .focusable()
         .focusEffectDisabled()
@@ -139,7 +135,6 @@ struct StatusPanelView: View {
         .onDisappear {
             store.panelOpen = false
             confirmation = nil
-            actionFeedback = nil
             resizeAnchor.endResize()
             resizeOrigin = nil
             livePanelSize = nil
@@ -391,9 +386,9 @@ struct StatusPanelView: View {
                 clearButton
             }
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 10)
-        .frame(height: PanelChrome.hit + 12)
+        .padding(.leading, compactPanel ? 8 : 12)
+        .padding(.trailing, compactPanel ? 6 : 10)
+        .frame(height: compactPanel ? PanelChrome.hit : PanelChrome.hit + 12)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Status")
         .accessibilityAddTraits(.isHeader)
@@ -417,7 +412,7 @@ struct StatusPanelView: View {
             PanelChrome.symbol(systemName, weight: .semibold)
                 .frame(width: PanelChrome.hit, height: PanelChrome.hit)
             Text("\(count)")
-                .font(.body.weight(.semibold).monospacedDigit())
+                .font((compactPanel ? Font.callout : Font.body).weight(.semibold).monospacedDigit())
         }
         .foregroundStyle(color)
         .help(help)
@@ -430,67 +425,87 @@ struct StatusPanelView: View {
         let sections = store.statusSections(mode: settings.panelGroupMode)
         if sections.isEmpty {
             emptyState
-        } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(sections) { section in
-                        sectionHeader(section.title)
-                        ForEach(section.jobs) { job in
-                            let children = job.isGroupJob ? store.members(of: job.id) : []
-                            let treeOpen = expandedId == job.id
-                                || children.contains(where: { $0.id == expandedId })
-                            ExpandableSubjectRow(
-                                subject: job,
-                                depth: 0,
-                                children: children,
-                                isExpanded: treeOpen,
-                                isKeyboardFocused: store.selectedJobId == job.id,
-                                timeline: store.timeline(for: job.id),
-                                childExpandedId: expandedId,
-                                childTimelines: Dictionary(
-                                    uniqueKeysWithValues: children.map {
-                                        ($0.id, store.timeline(for: $0.id))
-                                    }
-                                ),
-                                onToggle: {
-                                    withAnimation(animate ? .easeInOut(duration: 0.14) : nil) {
-                                        if treeOpen {
-                                            expandedId = nil
-                                        } else {
-                                            expandedId = job.id
-                                            store.selectedJobId = job.id
-                                            if let idx = listedSubjects.firstIndex(where: { $0.id == job.id }) {
-                                                store.focusedListIndex = idx
-                                            }
-                                        }
-                                    }
-                                },
-                                onToggleChild: { childId in
-                                    withAnimation(animate ? .easeInOut(duration: 0.14) : nil) {
-                                        if expandedId == childId {
-                                            expandedId = job.id // collapse child detail; keep tree open
-                                        } else {
-                                            expandedId = childId
-                                            store.selectedJobId = childId
-                                        }
-                                    }
-                                },
-                                onJump: { reveal(job) },
-                                onJumpChild: { reveal($0) },
-                                onAction: { actionId in
-                                    handleAction(actionId: actionId, subject: job)
-                                },
-                                onChildAction: { actionId, child in
-                                    handleAction(actionId: actionId, subject: child)
-                                }
-                            )
-                            rowDivider
-                        }
-                    }
-                }
-                .padding(.bottom, 6)
+        } else if compactPanel {
+            // A short list is the list. The scroll view is only for what does not fit.
+            // `LazyVStack` reports no height, so the fitting pass uses a real stack.
+            ViewThatFits(in: .vertical) {
+                sectionList(sections, lazy: false)
+                ScrollView { sectionList(sections, lazy: true) }
+                    .scrollIndicators(.automatic)
             }
-            .scrollIndicators(.automatic)
+        } else {
+            ScrollView { sectionList(sections, lazy: true) }
+                .scrollIndicators(.automatic)
+        }
+    }
+
+    private func sectionList(_ sections: [StatusSection], lazy: Bool) -> some View {
+        let rows = sectionsRow(sections)
+        return Group {
+            if lazy {
+                LazyVStack(alignment: .leading, spacing: 0) { rows }
+            } else {
+                VStack(alignment: .leading, spacing: 0) { rows }
+            }
+        }
+        .padding(.bottom, compactPanel ? 2 : 6)
+    }
+
+    @ViewBuilder
+    private func sectionsRow(_ sections: [StatusSection]) -> some View {
+        ForEach(sections) { section in
+            sectionHeader(section.title)
+            ForEach(section.jobs) { job in
+                let children = job.isGroupJob ? store.members(of: job.id) : []
+                let treeOpen = expandedId == job.id
+                    || children.contains(where: { $0.id == expandedId })
+                ExpandableSubjectRow(
+                    subject: job,
+                    depth: 0,
+                    children: children,
+                    isExpanded: treeOpen,
+                    isKeyboardFocused: store.selectedJobId == job.id,
+                    timeline: store.timeline(for: job.id),
+                    childExpandedId: expandedId,
+                    childTimelines: Dictionary(
+                        uniqueKeysWithValues: children.map {
+                            ($0.id, store.timeline(for: $0.id))
+                        }
+                    ),
+                    onToggle: {
+                        withAnimation(animate ? .easeInOut(duration: 0.14) : nil) {
+                            if treeOpen {
+                                expandedId = nil
+                            } else {
+                                expandedId = job.id
+                                store.selectedJobId = job.id
+                                if let idx = listedSubjects.firstIndex(where: { $0.id == job.id }) {
+                                    store.focusedListIndex = idx
+                                }
+                            }
+                        }
+                    },
+                    onToggleChild: { childId in
+                        withAnimation(animate ? .easeInOut(duration: 0.14) : nil) {
+                            if expandedId == childId {
+                                expandedId = job.id // collapse child detail; keep tree open
+                            } else {
+                                expandedId = childId
+                                store.selectedJobId = childId
+                            }
+                        }
+                    },
+                    onJump: { reveal(job) },
+                    onJumpChild: { reveal($0) },
+                    onAction: { actionId in
+                        handleAction(actionId: actionId, subject: job)
+                    },
+                    onChildAction: { actionId, child in
+                        handleAction(actionId: actionId, subject: child)
+                    }
+                )
+                rowDivider
+            }
         }
     }
 
@@ -517,15 +532,19 @@ struct StatusPanelView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    @ViewBuilder
     private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 3)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        // Active and Turn complete are the dot. A machine name is not.
+        if !StatusPhrase.isStatus(title) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .padding(.horizontal, compactPanel ? 10 : 12)
+                .padding(.top, compactPanel ? 2 : 10)
+                .padding(.bottom, compactPanel ? 1 : 3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var rowDivider: some View {
@@ -536,13 +555,7 @@ struct StatusPanelView: View {
 
     private func reveal(_ subject: Job) {
         store.selectedJobId = subject.id
-        let result = ActionService.openLocation(subject)
-        switch result {
-        case .succeeded(let message), .failed(let message), .denied(let message), .pending(let message):
-            actionFeedback = message
-        case .unsupported:
-            actionFeedback = "No window to open."
-        }
+        _ = ActionService.openLocation(subject)
     }
 
     private func handleAction(actionId: String, subject: Job) {
@@ -555,12 +568,7 @@ struct StatusPanelView: View {
                 producer: subject.producer.name ?? subject.producer.id
             )
         } else {
-            let result = store.performAction(actionId: actionId, jobId: subject.id, confirmed: true)
-            switch result {
-            case .succeeded(let message), .failed(let message), .denied(let message), .pending(let message):
-                actionFeedback = message
-            case .unsupported: actionFeedback = "This action is unavailable."
-            }
+            _ = store.performAction(actionId: actionId, jobId: subject.id, confirmed: true)
         }
     }
 }
@@ -568,15 +576,46 @@ struct StatusPanelView: View {
 public struct StatusPanelRoot: View {
     @Bindable var store: JobStore
     @Bindable var settings: SettingsStore
+    /// Hug the rows. The menu-bar window keeps the size the person dragged.
+    var fitsContent: Bool
 
-    public init(store: JobStore, settings: SettingsStore) {
+    public init(store: JobStore, settings: SettingsStore, fitsContent: Bool = false) {
         self.store = store
         self.settings = settings
+        self.fitsContent = fitsContent
     }
 
     public var body: some View {
         StatusPanelView()
             .environment(store)
             .environment(settings)
+            .environment(\.compactPanel, fitsContent)
+    }
+}
+
+/// A hosted panel is as tall as its rows, and no taller than the saved height.
+private struct PanelSizing: ViewModifier {
+    var compact: Bool
+    var size: CGSize
+
+    func body(content: Content) -> some View {
+        if compact {
+            content
+                .frame(width: size.width, alignment: .topLeading)
+                .frame(maxHeight: size.height, alignment: .top)
+        } else {
+            content.frame(width: size.width, height: size.height, alignment: .topLeading)
+        }
+    }
+}
+
+private struct CompactPanelKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var compactPanel: Bool {
+        get { self[CompactPanelKey.self] }
+        set { self[CompactPanelKey.self] = newValue }
     }
 }

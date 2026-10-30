@@ -12,16 +12,17 @@
 //! - A process that genuinely exits with code `259` is indistinguishable from
 //!   a running one, because `259` *is* `STILL_ACTIVE`. It reads as alive until
 //!   something else closes the row.
-//! - Windows recycles pids far faster than POSIX, so a probe can answer about
-//!   a different process with the same number. The probe is advisory and
-//!   callers already refuse to reap very young jobs, which covers the common
-//!   window.
+//! - Windows recycles pids far faster than POSIX, so [`state`] can answer
+//!   about a different process with the same number. [`start_token`] is that
+//!   process's creation time; a caller reaps when it no longer matches the
+//!   one it recorded. A token we cannot read is not evidence of death.
 
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, GetLastError, HANDLE, STILL_ACTIVE,
+    CloseHandle, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, FILETIME, GetLastError, HANDLE,
+    STILL_ACTIVE,
 };
 use windows_sys::Win32::System::Threading::{
-    GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    GetExitCodeProcess, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 
 use super::PidState;
@@ -74,6 +75,41 @@ pub fn state(pid: i32) -> PidState {
             PidState::Alive
         } else {
             PidState::Dead
+        }
+    }
+}
+
+/// Creation time of `pid` as an opaque decimal token.
+///
+/// `None` when the process cannot be queried. That is not proof it died;
+/// [`state`] is the liveness answer. Does not signal the process.
+pub fn start_token(pid: i32) -> Option<String> {
+    let Ok(pid) = u32::try_from(pid) else {
+        return None;
+    };
+
+    // SAFETY: same handle contract as `state`. `GetProcessTimes` writes four
+    // `FILETIME`s through pointers to live locals. The handle is released by
+    // `OwnedHandle`'s `Drop`. Nothing here signals the process.
+    #[allow(unsafe_code)]
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return None;
+        }
+        let handle = OwnedHandle(handle);
+        let mut created = FILETIME::default();
+        let mut exited = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        if GetProcessTimes(handle.0, &mut created, &mut exited, &mut kernel, &mut user) == 0 {
+            return None;
+        }
+        let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+        if ticks == 0 {
+            None
+        } else {
+            Some(ticks.to_string())
         }
     }
 }

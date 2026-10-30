@@ -21,7 +21,8 @@ def agent_pid():
             line = subprocess.check_output(["ps", "-p", str(pid), "-o", "ppid=,comm="], text=True, stderr=subprocess.DEVNULL, timeout=0.1).strip()
             parent, name = line.split(None, 1)
             name = Path(name).name.lower()
-            if name not in {"sh", "bash", "zsh", "fish", "dash", "python", "python3"} and not name.endswith(".sh"):
+            # node and python are often the agent. Only a shell wrapper is skipped.
+            if name not in {"sh", "bash", "zsh", "fish", "dash"} and not name.endswith(".sh"):
                 break
             parent = int(parent)
             if parent <= 1 or parent == pid:
@@ -31,19 +32,46 @@ def agent_pid():
             break
     return pid if pid > 1 else None
 
+def terminal_identity():
+    """The session tty. A hook is often spawned off-tty; walk ancestors."""
+    if sys.platform == 'win32':
+        return None
+    pid = os.getpid()
+    seen = set()
+    for _ in range(8):
+        if pid <= 1 or pid in seen:
+            break
+        seen.add(pid)
+        try:
+            line = subprocess.check_output(['ps', '-p', str(pid), '-o', 'ppid=,tty='], text=True,
+                stderr=subprocess.DEVNULL, timeout=0.1).strip()
+        except (OSError, subprocess.SubprocessError):
+            break
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            break
+        parent, tty = parts
+        name = tty.removeprefix('/dev/')
+        if re.fullmatch(r'ttys\d+|pts/\d+', name):
+            return socket.gethostname().lower(), '/dev/' + name
+        try:
+            parent = int(parent)
+        except ValueError:
+            break
+        if parent <= 1 or parent == pid:
+            break
+        pid = parent
+    return None
+
 def enrich(payload):
     result = dict(payload)
     pid = agent_pid()
     token = next((f"{key}:{os.environ[key]}" for key in SLOT_KEYS if os.environ.get(key)), f"pid:{pid}")
     result.update(agentPid=pid, slotId=hashlib.sha256(token.encode()).hexdigest()[:32])
-    if sys.platform != 'win32':
-        try:
-            terminal = subprocess.check_output(['ps', '-p', str(os.getpid()), '-o', 'tty='], text=True,
-                stderr=subprocess.DEVNULL, timeout=0.1).strip().removeprefix('/dev/')
-            if re.fullmatch(r'ttys\d+|pts/\d+', terminal):
-                result.update(terminalHost=socket.gethostname().lower(), terminalName='/dev/' + terminal)
-        except (OSError, subprocess.SubprocessError):
-            pass
+    found = terminal_identity()
+    if found:
+        host, terminal = found
+        result.update(terminalHost=host, terminalName=terminal)
     return result
 
 def forward(payload):

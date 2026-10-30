@@ -48,10 +48,11 @@ impl NotifyPolicy {
 
 /// Native interrupt surfaces, most specific first.
 ///
-/// The macOS menu bar speaks UserNotifications; Windows the tray toast. VS Code and tmux interrupt inside their own UI. Prefer the OS
-/// banner when one is connected, so an editor toast does not win over the
-/// menu bar the user already has.
-const PREFER: &[&str] = &["macos", "windows", "vscode", "tmux"];
+/// The macOS menu bar speaks UserNotifications; Windows the tray toast.
+/// Tether raises a host note (a system banner when the app is in the
+/// background). VS Code and tmux interrupt inside their own UI. Prefer the
+/// menu bar when it is connected, so a terminal note does not win over it.
+pub(crate) const PREFER: &[&str] = &["macos", "windows", "tether", "vscode", "tmux"];
 
 /// The lease one frame (or `/v1/health`) carries.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -153,6 +154,18 @@ mod tests {
     fn single_falls_to_vscode_when_macos_is_gone() {
         let owner = elect(NotifyPolicy::Single, &["tmux".into(), "vscode".into()]);
         assert_eq!(owner.as_deref(), Some("vscode"));
+    }
+
+    #[test]
+    fn single_prefers_the_menu_bar_over_tether_and_tether_over_vscode() {
+        assert_eq!(
+            elect(NotifyPolicy::Single, &["tether".into(), "macos".into()]).as_deref(),
+            Some("macos")
+        );
+        assert_eq!(
+            elect(NotifyPolicy::Single, &["vscode".into(), "tether".into()]).as_deref(),
+            Some("tether")
+        );
     }
 
     #[test]

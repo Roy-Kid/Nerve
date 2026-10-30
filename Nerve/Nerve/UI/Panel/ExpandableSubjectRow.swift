@@ -47,12 +47,20 @@ struct ExpandableSubjectRow: View {
     var onChildAction: ((String, Job) -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.compactPanel) private var compactPanel
     @Environment(SettingsStore.self) private var settings
     @State private var hovered = false
 
     private var indent: CGFloat { CGFloat(depth) * 14 }
 
     private var hasSubtasks: Bool { !children.isEmpty || subject.isGroupJob }
+
+    /// Only a job that needs attention spends a column on Open. An empty
+    /// slot on every other row was wide enough to collapse the activity.
+    private var openAction: JobAction? {
+        guard subject.status == .attention else { return nil }
+        return subject.actions.first { ActionService.isOpenKind($0.kind) }
+    }
 
     private var visibleColumns: [PanelColumn] { settings.panelColumns }
 
@@ -101,27 +109,20 @@ struct ExpandableSubjectRow: View {
                 .buttonStyle(.plain)
                 .help(expandHint)
                 .accessibilityLabel("Details")
-                if subject.status == .attention,
-                   let action = subject.actions.first(where: { ActionService.isOpenKind($0.kind) }) {
+                if let openAction {
                     PanelIconButton(
                         systemName: "arrow.up.forward.app",
                         help: ActionService.focusActionTitle(for: subject),
                         accessibilityLabel: ActionService.focusActionTitle(for: subject),
-                        enabled: action.state == .available
+                        enabled: openAction.state == .available
                     ) {
-                        onAction(action.id)
+                        onAction(openAction.id)
                     }
-                } else {
-                    // Keep the trailing action column stable so status and disclosure
-                    // stay aligned even when only some jobs need attention.
-                    Color.clear
-                        .frame(width: PanelChrome.hit, height: PanelChrome.hit)
-                        .accessibilityHidden(true)
                 }
             }
-            .padding(.leading, 12 + indent)
-            .padding(.trailing, 12)
-            .padding(.vertical, 7)
+            .padding(.leading, (compactPanel ? 4 : 12) + indent)
+            .padding(.trailing, compactPanel ? 4 : 12)
+            .padding(.vertical, compactPanel ? 1 : 7)
             .background { rowSelectionBackground }
             .onHover { hovered = $0 }
             .animation(nil, value: hovered)
@@ -221,20 +222,24 @@ struct ExpandableSubjectRow: View {
     @ViewBuilder
     private func columnCell(_ column: PanelColumn) -> some View {
         let text = text(for: column)
+        if column == .summary, text.isEmpty {
+            EmptyView()
+        } else {
         Text(text)
             .font(columnFont(column))
             .foregroundStyle(column == .name ? Color.primary : Color.secondary)
             .lineLimit(1)
             .truncationMode(.tail)
             .frame(
-                minWidth: column.isFlexible ? 40 : column.width,
+                minWidth: column.minWidth,
                 idealWidth: column.isFlexible ? nil : column.width,
-                maxWidth: column.isFlexible ? .infinity : column.width,
+                maxWidth: column.maxWidth,
                 alignment: .leading
             )
-            .layoutPriority(column.isFlexible ? 0 : 1)
+            .layoutPriority(column.layoutPriority)
             .help(text.isEmpty ? column.title : text)
             .opacity(text.isEmpty ? 0.35 : 1)
+        }
     }
 
     private func columnFont(_ column: PanelColumn) -> Font {
@@ -267,7 +272,11 @@ struct ExpandableSubjectRow: View {
         }
     }
 
-    private var activityText: String { subject.display?.activity ?? "" }
+    /// A tool name stays. "Turn complete" does not: the dot already said it.
+    private var activityText: String {
+        let text = subject.display?.activity ?? ""
+        return StatusPhrase.isStatus(text) ? "" : text
+    }
 
     @ViewBuilder
     private var rowSelectionBackground: some View {
@@ -291,7 +300,9 @@ struct ExpandableSubjectRow: View {
                 if let prompt = subject.lastPrompt {
                     promptBlock(prompt)
                 }
-                if let summary = subject.current?.summary ?? subject.current?.name, !summary.isEmpty {
+                if let summary = subject.current?.summary ?? subject.current?.name,
+                    !summary.isEmpty, !StatusPhrase.isStatus(summary)
+                {
                     meta("Doing", summary)
                 }
                 if let project = subject.context?.project, !project.isEmpty, project != subject.name {

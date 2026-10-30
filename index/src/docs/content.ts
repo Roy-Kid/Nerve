@@ -177,7 +177,11 @@ export const docPages: DocPage[] = [
       },
       {
         type: 'p',
-        text: 'With a Tether build supporting the tabIndicator plugin contribution, task state also appears as a colored circle before the matching tab name. Matching uses the actual machine hostname and controlling TTY, so renaming a tab has no effect. Update the hub, hooks and installed web package together; the next hook event supplies the identity. The hub selects one state per terminal. A split tab shows its focused terminal; loss of the hub connection clears the marks.',
+        text: 'With a Tether build supporting the tabIndicator plugin contribution, task state also appears as a colored circle before the matching tab name. Matching uses the kernel hostname (the same string the hook reports) and the controlling TTY, so renaming a tab has no effect. A new tab picks the mark up on the next hub frame without being selected. Update the hub, hooks and installed web package together; the next hook event supplies the identity. The hub selects one state per terminal. A split tab shows its focused terminal; loss of the hub connection clears the marks.',
+      },
+      {
+        type: 'p',
+        text: 'The first launch of Nerve and of Tether asks for notification permission. If that was declined, each app offers to open System Settings → Notifications. Asks, failures, and long completions then notify through the elected surface. The menu bar app stays first while it is connected and notifications are allowed, so the two do not both interrupt. An Ask that nobody could show is tried again when a surface becomes eligible. A notification that was already sent is not replayed.',
       },
       { type: 'h2', text: 'Ribbon gestures' },
       {
@@ -885,7 +889,7 @@ cargo install nerve-hub nerve-windows-surface`,
         items: [
           'jobs — the authoritative full set. The first frame arrives on connect.',
           'departed — terminal states of jobs evicted since the previous frame (lifecycle ended, endedAt, outcome). A hint so surfaces do not lose the ending; jobs stays the authority.',
-          'notifications — commands targeted to one client instance and connection, each with a unique notification ID. Only the hub detects Ask/escalation, applies the 120-second window and selects capable enabled clients under single/all. Surfaces execute and report results. Connect and polling frames never replay historical notifications. An old protocol requires an upgrade.',
+          'notifications — commands targeted to one client instance and connection, each with a unique notification ID. Only the hub detects Ask/escalation, applies the 120-second window and selects capable clients under single/all. Preference is macos, windows, tether, vscode, then tmux. A surface that registered with notifications=true and has not sent preferences is eligible. An undelivered Ask is tried again when a client becomes eligible. Connect and polling frames do not replay a notification that was already sent. An old protocol requires an upgrade.',
           'Reconnecting is resyncing — drop the connection and the next first frame is the full set again.',
           'Every job in a frame has the same shape as one from /v1/jobs, including the timeline the hub keeps for it: up to 40 entries, heartbeats excluded.',
           '?surface=<label>&instanceId=<unique>&notifications=true registers a notification executor; PUT /v1/clients/<instance> configures eligibility. GET /v1/frame is the polling/recovery endpoint. GET/PUT /v1/machines and connect/disconnect/discover operations are hub-owned SSH settings.',
@@ -1601,7 +1605,7 @@ const zhIngestPage: DocPage = {
       items: [
         'jobs——权威的完整集合。连接时会收到第一个 frame。',
         'departed——自上一个 frame 以来已移除任务的终止状态（lifecycle ended、endedAt、outcome）。它是一个提示，让 surface 不会丢失结尾；jobs 仍是权威来源。',
-        'notifications——带唯一通知 ID、目标客户端实例和连接的执行指令。Ask、级别升级、120 秒去重、single/all 与目标选择全部在 hub；surface 执行并回报。重连和轮询不重放历史通知；旧协议必须升级。',
+        'notifications——带唯一通知 ID、目标客户端实例和连接的执行指令。Ask、级别升级、120 秒去重、single/all 与目标选择全部在 hub；优先顺序是 macos、windows、tether、vscode、tmux。带 notifications=true 且尚未提交偏好的 surface 可以接收。无人能展示的 Ask 会在有客户端可接收时再试一次。已经发出的通知不会在重连或轮询时重放；旧协议必须升级。',
         '重新连接就是重新同步——断开连接后，下一个第一 frame 仍然是完整集合。',
         'frame 中的每个任务都与 /v1/jobs 返回的任务形状相同，包括 hub 为它保存的时间线：最多 40 个条目，不包含 heartbeat。',
           '?surface=<label>&instanceId=<unique>&notifications=true registers a notification executor; PUT /v1/clients/<instance> configures eligibility. GET /v1/frame is the polling/recovery endpoint. GET/PUT /v1/machines and connect/disconnect/discover operations are hub-owned SSH settings.',
@@ -1675,6 +1679,10 @@ const zhDocPages: DocPage[] = [
       {
         type: 'p',
         text: '使用支持 tabIndicator 插件贡献的 Tether 版本时，任务状态还会显示为对应 tab 名称前的彩色圆点。关联依据实际机器 hostname 和控制 TTY，重命名 tab 不影响关联。需要同步更新 hub、钩子和已安装的 Web 插件；下一条钩子事件会提供终端身份。hub 为每个终端选择一个状态；分屏 tab 显示当前聚焦终端的状态，与 hub 断开后清除标志。',
+      },
+      {
+        type: 'p',
+        text: 'Nerve 和 Tether 第一次启动时会请求通知权限。如果已经拒绝，各自会提示打开系统设置 → 通知。之后 Ask、失败和长时间完成由被选中的一端提醒。菜单栏应用在已连接且允许通知时优先，因此两边不会同时打断。当时没有接收方的 Ask，会在有 surface 可以接收时再试一次。已经发出的通知不会重放。',
       },
       { type: 'h2', text: '系统要求' },
       {

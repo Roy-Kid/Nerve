@@ -1,12 +1,58 @@
 import Foundation
 import AppKit
 
+/// Names this Mac answers to. Hooks report `gethostname`; Bonjour is `*.local`.
+enum LocalMachineNames {
+    static var kernel: String {
+        var bytes = [CChar](repeating: 0, count: 256)
+        guard gethostname(&bytes, bytes.count) == 0 else {
+            return ProcessInfo.processInfo.hostName.lowercased()
+        }
+        let units = bytes.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        let name = String(decoding: units, as: UTF8.self).lowercased()
+        return name.isEmpty ? ProcessInfo.processInfo.hostName.lowercased() : name
+    }
+
+    static func same(_ reported: String) -> Bool {
+        let host = reported.lowercased()
+        guard !host.isEmpty else { return false }
+        var names: Set<String> = []
+        func add(_ raw: String) {
+            let value = raw.lowercased()
+            guard !value.isEmpty else { return }
+            names.insert(value)
+            if let short = value.split(separator: ".").first { names.insert(String(short)) }
+            if value.hasSuffix(".local") { names.insert(String(value.dropLast(".local".count))) }
+        }
+        add(kernel)
+        add(ProcessInfo.processInfo.hostName)
+        return names.contains(host)
+    }
+}
+
 enum ActionResult: Sendable {
     case succeeded(String)
     case failed(String)
     case pending(String)   // queued for owning producer
     case unsupported
     case denied(String)
+}
+
+/// Where a row click should land, when a host has its own windows.
+///
+/// Set by Tether. A click then uses that landing — the named tty, then the
+/// workspace, then an editor link — and a folder is not handed to Finder.
+/// Nerve.app leaves this unset and opens the location itself.
+@MainActor
+public enum PanelFocusBridge {
+    public struct Request: Sendable, Equatable {
+        public var host: String?
+        public var terminal: String?
+        public var directory: String?
+        public var url: String?
+    }
+
+    public static var land: ((Request) -> Bool)?
 }
 
 /// Local display helpers only. Nerve does **not** reverse-control agents or jobs.
@@ -54,11 +100,22 @@ enum ActionService {
         openKinds.contains(kind.lowercased())
     }
 
-    /// Whether this job can jump somewhere (URL or focus breadcrumb).
+    /// Whether this job can jump somewhere (its terminal, a URL, or a breadcrumb).
     static func canFocus(_ subject: Job) -> Bool {
+        if terminalTarget(of: subject) != nil { return true }
         if let url = subject.location?.openURL, !url.isEmpty { return true }
         if let hint = subject.location?.focusHint, !hint.isEmpty { return true }
         return false
+    }
+
+    /// `extensions.terminal` as the hub published it: kernel hostname and `/dev/ttysN`.
+    static func terminalTarget(of subject: Job) -> (host: String, device: String)? {
+        guard case .object(let terminal) = subject.extensions["terminal"],
+              case .string(let host) = terminal["host"],
+              case .string(let device) = terminal["terminal"],
+              !host.isEmpty, !device.isEmpty
+        else { return nil }
+        return (host, device)
     }
 
     /// Preferred primary local action title for the panel.
@@ -70,6 +127,9 @@ enum ActionService {
         if let alias = RemoteMachine.foreignAlias(of: subject.alias) {
             if ideDeepLink(subject) != nil { return "Open on \(alias)" }
             return remoteSSHHost(for: subject) != nil ? "Connect to \(alias)" : "Copy location"
+        }
+        if let target = terminalTarget(of: subject), LocalMachineNames.same(target.host) {
+            return "Show terminal"
         }
         if let url = subject.location?.openURL, !url.isEmpty {
             return url.hasPrefix("file:") || url.hasPrefix("/") ? "Open workspace" : "Open agent"
@@ -141,15 +201,47 @@ enum ActionService {
         return nil
     }
 
+    /// The same fields the web panel sends to `host.focus`.
+    static func focusRequest(of subject: Job) -> PanelFocusBridge.Request {
+        let terminal = terminalTarget(of: subject)
+        let directory = subject.context?.workspace?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = subject.location?.openURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return PanelFocusBridge.Request(
+            host: terminal?.host,
+            terminal: terminal?.device,
+            directory: directory?.isEmpty == false ? directory : nil,
+            url: url?.isEmpty == false ? url : nil
+        )
+    }
+
     /// Open workspace / IDE deep link, else copy focus breadcrumb for the user.
     ///
     /// A job on another machine is answered by [`openRemote`] instead: its
     /// `openURL` names that machine's filesystem, and opening it here would at
     /// best fail and at worst open an unrelated local folder of the same name.
+    ///
+    /// A host that set ``PanelFocusBridge/land`` answers the click itself.
+    /// A file URL is the workspace the agent is running in, and opening it
+    /// launches Finder.
     @MainActor
     static func openLocation(_ subject: Job) -> ActionResult {
         if let alias = RemoteMachine.foreignAlias(of: subject.alias) {
             return openRemote(subject, alias: alias)
+        }
+        if let land = PanelFocusBridge.land {
+            return land(focusRequest(of: subject))
+                ? .succeeded("") : .failed("No matching terminal or workspace")
+        }
+        // Same landing as the Tether panel: the named tty, then an editor link,
+        // then a folder. A file URL is not the window the agent is running in.
+        if let target = terminalTarget(of: subject),
+           LocalMachineNames.same(target.host),
+           let source = terminalScript(device: target.device) {
+            var error: NSDictionary?
+            let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
+            if error == nil, result?.booleanValue == true {
+                return .succeeded("Opened terminal")
+            }
         }
         if let raw = subject.location?.openURL?.trimmingCharacters(in: .whitespacesAndNewlines),
            !raw.isEmpty {
@@ -202,6 +294,30 @@ enum ActionService {
             return .failed("No app to open ssh \(host)")
         }
         return copyFocusBreadcrumb(subject, fallback: "\(alias) — no ssh host in ~/.ssh/config")
+    }
+
+    /// AppleScript that selects the Terminal.app tab whose tty is `device`.
+    /// Anything that is not a bare tty path is refused: the string is interpolated.
+    static func terminalScript(device: String) -> String? {
+        guard device.range(of: #"^/dev/(ttys\d+|pts/\d+)$"#, options: .regularExpression) != nil else {
+            return nil
+        }
+        return """
+        tell application "Terminal"
+          if not running then return false
+          repeat with w in windows
+            repeat with t in tabs of w
+              if tty of t is "\(device)" then
+                set selected tab of w to t
+                set index of w to 1
+                activate
+                return true
+              end if
+            end repeat
+          end repeat
+          return false
+        end tell
+        """
     }
 
     /// `openURL` when it is a link its app resolves on its own (`cursor://`,

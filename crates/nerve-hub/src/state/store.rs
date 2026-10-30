@@ -51,11 +51,13 @@ pub struct JobStore {
 /// Open fields a snapshot inherits from the job it replaces.
 ///
 /// A hook is one process per event, so only the `UserPromptSubmit` run ever
-/// sees the prompt — every snapshot after it would blank the field. Patches
-/// already merge per key (`state/patch.rs`); this is the same promise at the
-/// snapshot door, kept deliberately narrow: facts *about* the job that a
-/// producer states once, never live status (which must be free to go away).
-const STICKY_EXTENSIONS: [&str; 2] = ["lastPrompt", "lastPromptAt"];
+/// sees the prompt — every snapshot after it would blank the field. The
+/// same is true of the controlling terminal: the hook process is often off
+/// a tty, and a later event must not wipe the device a previous one named.
+/// Patches already merge per key (`state/patch.rs`); this is the same promise
+/// at the snapshot door, kept deliberately narrow: facts *about* the job that
+/// a producer states once, never live status (which must be free to go away).
+const STICKY_EXTENSIONS: [&str; 3] = ["lastPrompt", "lastPromptAt", "terminal"];
 
 /// A job as published: its own wire shape plus the timeline the hub keeps for it.
 ///
@@ -258,6 +260,7 @@ impl JobStore {
             self.evict_ended(ended);
             return;
         }
+        self.remember_pid_start(&mut job);
         let id = job.id.clone();
         self.jobs.insert(id.clone(), job);
         // A parent update also scrubs leftover child rows for that session.
@@ -296,11 +299,12 @@ impl JobStore {
 
     /// Store the patched job, or let it leave if the event closed it. A closed
     /// session is never inserted into the panel first.
-    fn keep_or_evict(&mut self, next: Job, event: &Event) -> bool {
+    fn keep_or_evict(&mut self, mut next: Job, event: &Event) -> bool {
         if next.is_ended() {
             self.evict_ended(next);
             return true;
         }
+        self.remember_pid_start(&mut next);
         self.timelines.record(
             &next.id,
             event.kind.wire(),
@@ -358,6 +362,29 @@ impl JobStore {
         last.into_values().collect()
     }
 
+    /// Record the producer process's start token beside `extensions.pid`.
+    ///
+    /// Taken when the producer checks in, so a later `kill(pid, 0)` that still
+    /// says alive can be told from the process that reported. No pid, or a pid
+    /// the OS will not time, leaves no token — absence is not an exit. A
+    /// failed read keeps the token already stored for this same pid.
+    fn remember_pid_start(&self, job: &mut Job) {
+        let previous = self
+            .jobs
+            .get(&job.id)
+            .filter(|stored| stored.producer_pid() == job.producer_pid())
+            .and_then(|stored| stored.pid_start().map(str::to_string));
+        let Some(pid) = job.producer_pid() else {
+            job.set_pid_start(None);
+            return;
+        };
+        if let Some(token) = self.reaper.start_of(pid) {
+            job.set_pid_start(Some(token));
+            return;
+        }
+        job.set_pid_start(previous);
+    }
+
     fn drop_legacy_child(&mut self, id: &str) {
         self.jobs.remove(id);
         self.timelines.forget(id);
@@ -375,8 +402,9 @@ impl JobStore {
         }
     }
 
-    /// Local policy closes a row (dead pid today). Producers are not told —
-    /// the hub never signals an agent.
+    /// Local policy closes a row when its producer process is gone: the pid
+    /// died, or it now belongs to a process that started later. Producers are
+    /// not told — the hub never signals an agent.
     fn end_locally(&mut self, id: &str, reason: &str, summary: &str, outcome: Outcome) {
         let now = self.now();
         let Some(stored) = self.jobs.get(id) else {

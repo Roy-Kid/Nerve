@@ -14,18 +14,19 @@ final class HubClient {
     /// GET; a stream that delivers nothing for this long re-pulls `/v1/jobs`.
     private static let jobsPollInterval: TimeInterval = 3
 
-    /// `?surface=` is a log tag on the hub side — every surface sees every frame.
-    private static let streamURL: URL = {
+    /// The hub uses the host surface's identity to rank notification executors.
+    var streamURL: URL {
         guard var components = URLComponents(
             url: NerveEndpoint.stream,
             resolvingAgainstBaseURL: false
         ) else {
             return NerveEndpoint.stream
         }
-        components.queryItems = [URLQueryItem(name: "surface", value: "macos"), URLQueryItem(name: "instanceId", value: instanceId), URLQueryItem(name: "notifications", value: "true")]
+        components.queryItems = [URLQueryItem(name: "surface", value: surface), URLQueryItem(name: "instanceId", value: Self.instanceId), URLQueryItem(name: "notifications", value: "true")]
         return components.url ?? NerveEndpoint.stream
-    }()
+    }
 
+    private let surface: String
     private let store: JobStore
     private let session: URLSession
     /// Short GETs/POSTs. The stream session's 1h request timeout must not
@@ -50,8 +51,9 @@ final class HubClient {
     private var lastStreamFrameAt: Date = .distantPast
     private var retryDelay: TimeInterval = HubClient.minRetryDelay
 
-    init(store: JobStore) {
+    init(store: JobStore, surface: String = "macos") {
         self.store = store
+        self.surface = surface
 
         let configuration = URLSessionConfiguration.ephemeral
         // Keep-alives land every ~15s. A hung socket that still looks ESTABLISHED
@@ -83,11 +85,17 @@ final class HubClient {
         guard let settings = store.settingsProvider?() else { return }
         let authorization = await UNUserNotificationCenter.current().notificationSettings()
         let canNotify = authorization.authorizationStatus == .authorized || authorization.authorizationStatus == .provisional
+        let enabled = canNotify && !settings.notificationsPaused && (settings.notifyRequired || settings.notifyUrgent || settings.notifyFailure || settings.notifyUnresponsive || settings.notifyLongSuccess)
+        let eligibility = "notification client enabled=\(enabled) auth=\(authorization.authorizationStatus.rawValue)"
+        if eligibility != lastEligibilityLog {
+            lastEligibilityLog = eligibility
+            NerveLog.record(eligibility)
+        }
         var request = URLRequest(url: URL(string: "http://127.0.0.1:17890/v1/clients/\(Self.instanceId)")!)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["enabled": canNotify && !settings.notificationsPaused && (settings.notifyRequired || settings.notifyUrgent || settings.notifyFailure || settings.notifyUnresponsive || settings.notifyLongSuccess),
-            "failure":settings.notifyFailure,"unresponsive":settings.notifyUnresponsive,"longSuccess":settings.notifyLongSuccess,"longSuccessSeconds":settings.longTaskSuccessThresholdSeconds,"ask":settings.notifyRequired,"dndEnabled":settings.dndEnabled,"dndStart":settings.dndStartMinutes,"dndEnd":settings.dndEndMinutes,"utcOffsetMinutes":TimeZone.current.secondsFromGMT()/60,"urgent":settings.notifyUrgent,"sound":settings.notificationSoundEnabled,"mutedSources":Array(settings.mutedSourceIds),"mutedProjects":Array(settings.mutedProjectIds)])
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["enabled": enabled,
+            "failure":settings.notifyFailure,"unresponsive":settings.notifyUnresponsive,"longSuccess":settings.notifyLongSuccess,"longSuccessSeconds":settings.longTaskSuccessThresholdSeconds,"ask":settings.notifyRequired,"dndEnabled":settings.dndEnabled,"dndStart":settings.dndStartMinutes,"dndEnd":settings.dndEndMinutes,"utcOffsetMinutes":TimeZone.current.secondsFromGMT()/60,"urgent":settings.notifyUrgent,"sound":settings.notificationSoundEnabled,"mutedSources":Array(settings.mutedSourceIds).sorted(),"mutedProjects":Array(settings.mutedProjectIds).sorted()])
         _ = try? await shortSession.data(for: request)
     }
 
@@ -180,7 +188,7 @@ final class HubClient {
     /// One attach, held until the connection drops.
     private func readOneConnection() async throws {
         await configureNotifications()
-        var request = URLRequest(url: Self.streamURL)
+        var request = URLRequest(url: streamURL)
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
 
@@ -193,7 +201,7 @@ final class HubClient {
         }
 
         retryDelay = Self.minRetryDelay
-        NerveLog.record("attached to hub at \(Self.streamURL.absoluteString)")
+        NerveLog.record("attached to hub at \(streamURL.absoluteString)")
 
         // Read off the main actor. A MainActor `for await bytes.lines` can
         // stall the executor: Refresh, polling and SwiftUI then all freeze
@@ -228,6 +236,8 @@ final class HubClient {
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(Self.jobsPollInterval))
             guard !Task.isCancelled else { return }
+            // System Settings can allow banners while frames are still flowing.
+            await configureNotifications()
             guard Date().timeIntervalSince(lastStreamFrameAt) >= Self.jobsPollInterval else {
                 continue
             }
@@ -243,7 +253,6 @@ final class HubClient {
         } catch {
             // One unreadable frame is not worth dropping the connection over:
             // the next frame is a full snapshot and restores everything.
-            store.hubError=String(describing:error)
             NerveLog.record("hub frame ignored (decode failed): \(error)")
             return
         }
@@ -283,7 +292,6 @@ final class HubClient {
             }
             applyFrame(frame)
         } catch {
-            store.hubError=String(describing:error)
             store.hubUnavailable()
             NerveLog.record("hub jobs fetch failed: \(error)")
         }
@@ -291,6 +299,7 @@ final class HubClient {
 
     private var lastHubInstance: String?
     private var lastHubRevision: UInt64 = 0
+    private var lastEligibilityLog: String?
     private func applyFrame(_ frame: HubFrame) {
         if lastHubInstance == frame.hubInstanceId && frame.revision < lastHubRevision { return }
         lastHubInstance = frame.hubInstanceId
@@ -299,6 +308,8 @@ final class HubClient {
         store.receivedHubData()
         if !frame.jobs.isEmpty { store.hasSeenJobs = true }
         store.applyFrame(jobs: frame.jobs, timelines: frame.timelines, notify: frame.notify)
+        // Assigned only on change: every terminal's chip observes this.
+        if store.tabIndicators != frame.tabIndicators { store.tabIndicators = frame.tabIndicators }
         for event in frame.notifications where event.target == Self.instanceId {
             store.notificationSink?(event)
         }

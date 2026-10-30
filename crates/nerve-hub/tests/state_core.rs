@@ -124,26 +124,52 @@ fn fixture_with_default_pid(default: PidState) -> Fixture {
     }
 }
 
-/// Fake `PidProbe`: a default verdict plus per-pid overrides.
+/// Fake `PidProbe`: a default verdict plus per-pid overrides and start tokens.
 struct FakeProbe {
     default: PidState,
-    overrides: Mutex<HashMap<i32, PidState>>,
+    inner: Mutex<ProbeTable>,
+}
+
+struct ProbeTable {
+    states: HashMap<i32, PidState>,
+    starts: HashMap<i32, String>,
+    asked: Vec<i32>,
 }
 
 impl FakeProbe {
     fn new(default: PidState) -> Self {
         Self {
             default,
-            overrides: Mutex::new(HashMap::new()),
+            inner: Mutex::new(ProbeTable {
+                states: HashMap::new(),
+                starts: HashMap::new(),
+                asked: Vec::new(),
+            }),
         }
     }
 
     fn set(&self, pid: i32, state: PidState) {
-        self.lock().insert(pid, state);
+        self.lock().states.insert(pid, state);
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<i32, PidState>> {
-        self.overrides
+    fn set_start(&self, pid: i32, token: Option<&str>) {
+        let mut inner = self.lock();
+        match token {
+            Some(token) => {
+                inner.starts.insert(pid, token.to_string());
+            }
+            None => {
+                inner.starts.remove(&pid);
+            }
+        }
+    }
+
+    fn asked(&self) -> Vec<i32> {
+        self.lock().asked.clone()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, ProbeTable> {
+        self.inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -151,7 +177,15 @@ impl FakeProbe {
 
 impl PidProbe for FakeProbe {
     fn state(&self, pid: i32) -> PidState {
-        self.lock().get(&pid).copied().unwrap_or(self.default)
+        let mut inner = self.lock();
+        inner.asked.push(pid);
+        inner.states.get(&pid).copied().unwrap_or(self.default)
+    }
+
+    fn start(&self, pid: i32) -> Option<String> {
+        let mut inner = self.lock();
+        inner.asked.push(pid);
+        inner.starts.get(&pid).cloned()
     }
 }
 
@@ -351,8 +385,34 @@ fn test_a_new_prompt_replaces_the_kept_one() {
 }
 
 #[test]
+fn test_terminal_identity_stays_when_a_later_snapshot_omits_it() {
+    let mut fixture = fixture();
+    let terminal = json!({"host":"studio","terminal":"/dev/ttys003"});
+    fixture.store.apply_snapshot(vec![job_fixture(
+        "claude-code:s1",
+        json!({ "version": 1, "extensions": { "terminal": terminal, "pid": 7 } }),
+    )]);
+    fixture.store.apply_snapshot(vec![job_fixture(
+        "claude-code:s1",
+        json!({ "version": 2, "extensions": { "pid": 7 } }),
+    )]);
+
+    let stored = job_in(&fixture.store.jobs_json(), "claude-code:s1");
+    assert_eq!(stored.pointer("/extensions/terminal"), Some(&terminal));
+
+    let moved = json!({"host":"studio","terminal":"/dev/ttys009"});
+    fixture.store.apply_snapshot(vec![job_fixture(
+        "claude-code:s1",
+        json!({ "version": 3, "extensions": { "terminal": moved } }),
+    )]);
+    let stored = job_in(&fixture.store.jobs_json(), "claude-code:s1");
+    assert_eq!(stored.pointer("/extensions/terminal"), Some(&moved));
+    assert!(stored.pointer("/extensions/pid").is_none());
+}
+
+#[test]
 fn test_live_status_extensions_are_not_sticky() {
-    // Only prompt keys carry forward: a snapshot that drops `pid` means the
+    // Prompt and terminal carry forward. A snapshot that drops `pid` means the
     // producer stopped reporting one, and the hub must not re-assert it.
     let mut fixture = fixture();
     fixture.store.apply_snapshot(vec![job_fixture(
@@ -827,6 +887,172 @@ fn test_reaper_ignores_pid_below_two() {
     let jobs = fixture.store.jobs_json();
     assert!(has_job(&jobs, "job-pid-one"));
     assert!(has_job(&jobs, "job-pid-zero"));
+    assert!(
+        fixture.probe.asked().is_empty(),
+        "pid <= 1 must not be probed"
+    );
+}
+
+#[test]
+fn test_reaper_ends_job_when_pid_start_no_longer_matches() {
+    // kill(pid, 0) still says alive: the number was recycled onto a process
+    // that started later than the one the job recorded.
+    let mut fixture = fixture();
+    fixture.probe.set(4242, PidState::Alive);
+    fixture.probe.set_start(4242, Some("100"));
+    fixture.store.apply_snapshot(vec![job_fixture(
+        "claude-code:s1",
+        json!({ "extensions": { "pid": 4242 } }),
+    )]);
+    let stored = job_in(&fixture.store.jobs_json(), "claude-code:s1");
+    assert_eq!(text(&stored, "/extensions/pidStart"), "100");
+
+    fixture.probe.set_start(4242, Some("200"));
+    fixture.clock.advance(Duration::from_secs(10));
+    fixture.store.expire_and_reap();
+
+    assert!(!has_job(&fixture.store.jobs_json(), "claude-code:s1"));
+    let departed = fixture.store.take_departed();
+    assert_eq!(departed.len(), 1);
+    let gone = wire(&departed[0]);
+    assert_eq!(text(&gone, "/extensions/endReason"), "process_gone");
+    assert_eq!(text(&gone, "/outcome"), "cancelled");
+}
+
+#[test]
+fn test_reaper_keeps_job_when_pid_start_matches() {
+    let mut fixture = fixture();
+    fixture.probe.set(4242, PidState::Alive);
+    fixture.probe.set_start(4242, Some("100"));
+    fixture.store.apply_snapshot(vec![job_fixture(
+        "claude-code:s1",
+        json!({ "extensions": { "pid": 4242 } }),
+    )]);
+
+    fixture.clock.advance(Duration::from_secs(10));
+    fixture.store.expire_and_reap();
+
+    assert!(has_job(&fixture.store.jobs_json(), "claude-code:s1"));
+    let stored = job_in(&fixture.store.jobs_json(), "claude-code:s1");
+    assert_eq!(text(&stored, "/extensions/pidStart"), "100");
+    assert!(fixture.store.take_departed().is_empty());
+}
+
+#[test]
+fn test_reaper_retargets_pid_start_when_the_producer_reports_again() {
+    // The producer checked in from the process that now owns the pid. That
+    // row is live; the token moves with the report.
+    let mut fixture = fixture();
+    fixture.probe.set_start(4242, Some("100"));
+    fixture.store.apply_snapshot(vec![job_fixture(
+        "claude-code:s1",
+        json!({ "version": 1, "extensions": { "pid": 4242 } }),
+    )]);
+    fixture.probe.set_start(4242, Some("200"));
+    fixture.store.apply_snapshot(vec![job_fixture(
+        "claude-code:s1",
+        json!({ "version": 2, "extensions": { "pid": 4242 } }),
+    )]);
+
+    let stored = job_in(&fixture.store.jobs_json(), "claude-code:s1");
+    assert_eq!(text(&stored, "/extensions/pidStart"), "200");
+
+    fixture.clock.advance(Duration::from_secs(10));
+    fixture.store.expire_and_reap();
+
+    assert!(has_job(&fixture.store.jobs_json(), "claude-code:s1"));
+}
+
+#[test]
+fn test_reaper_keeps_job_when_start_time_is_missing() {
+    // A token we never recorded, or can no longer read, is not proof of death.
+    let mut fixture = fixture();
+    fixture.probe.set(4242, PidState::Alive);
+    fixture.probe.set_start(4242, Some("100"));
+    fixture.store.apply_snapshot(vec![job_fixture(
+        "claude-code:s1",
+        json!({ "extensions": { "pid": 4242 } }),
+    )]);
+    fixture.probe.set_start(4242, None);
+
+    fixture.clock.advance(Duration::from_secs(10));
+    fixture.store.expire_and_reap();
+
+    assert!(has_job(&fixture.store.jobs_json(), "claude-code:s1"));
+    let stored = job_in(&fixture.store.jobs_json(), "claude-code:s1");
+    assert_eq!(text(&stored, "/extensions/pidStart"), "100");
+}
+
+#[test]
+fn test_reaper_keeps_denied_pid_when_start_time_differs() {
+    let mut fixture = fixture();
+    fixture.probe.set(4242, PidState::Denied);
+    fixture.probe.set_start(4242, Some("100"));
+    fixture.store.apply_snapshot(vec![job_fixture(
+        "claude-code:s1",
+        json!({ "extensions": { "pid": 4242 } }),
+    )]);
+    fixture.probe.set_start(4242, Some("200"));
+
+    fixture.clock.advance(Duration::from_secs(10));
+    fixture.store.expire_and_reap();
+
+    assert!(has_job(&fixture.store.jobs_json(), "claude-code:s1"));
+    assert!(fixture.store.take_departed().is_empty());
+}
+
+#[test]
+fn test_reaper_keeps_recycled_pid_younger_than_min_age() {
+    let mut fixture = fixture();
+    fixture.probe.set_start(4242, Some("100"));
+    fixture.store.apply_snapshot(vec![job_fixture(
+        "claude-code:s1",
+        json!({ "extensions": { "pid": 4242 } }),
+    )]);
+    fixture.probe.set_start(4242, Some("200"));
+
+    fixture.clock.advance(Duration::from_secs(2));
+    fixture.store.expire_and_reap();
+
+    assert!(has_job(&fixture.store.jobs_json(), "claude-code:s1"));
+}
+
+#[test]
+fn test_reaper_does_not_reap_a_job_with_no_pid() {
+    // Silence is not an exit. There is no process to ask about.
+    let mut fixture = fixture_with_default_pid(PidState::Dead);
+    fixture
+        .store
+        .apply_snapshot(vec![job_fixture("claude-code:s1", json!({}))]);
+
+    fixture.clock.advance(Duration::from_secs(10));
+    fixture.store.expire_and_reap();
+
+    assert!(has_job(&fixture.store.jobs_json(), "claude-code:s1"));
+    assert!(fixture.probe.asked().is_empty());
+}
+
+#[test]
+fn test_reaper_forgets_pid_start_when_the_snapshot_drops_pid() {
+    let mut fixture = fixture_with_default_pid(PidState::Dead);
+    fixture.probe.set_start(4242, Some("100"));
+    fixture.store.apply_snapshot(vec![job_fixture(
+        "claude-code:s1",
+        json!({ "version": 1, "extensions": { "pid": 4242 } }),
+    )]);
+    fixture.store.apply_snapshot(vec![job_fixture(
+        "claude-code:s1",
+        json!({ "version": 2, "extensions": {} }),
+    )]);
+
+    let stored = job_in(&fixture.store.jobs_json(), "claude-code:s1");
+    assert!(stored.pointer("/extensions/pid").is_none());
+    assert!(stored.pointer("/extensions/pidStart").is_none());
+
+    fixture.clock.advance(Duration::from_secs(10));
+    fixture.store.expire_and_reap();
+
+    assert!(has_job(&fixture.store.jobs_json(), "claude-code:s1"));
 }
 
 // ── 7. Pending actions (dormant subsystem) ──────────────────────────────────

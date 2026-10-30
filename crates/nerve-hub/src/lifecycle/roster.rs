@@ -78,11 +78,12 @@ impl SurfaceRoster {
             others
         };
         let subscription = self.presence.subscribe();
-        // 0→1 has nobody else to tell; the connect frame already carries
-        // this surface. Raising here would republish ~150 ms later and
-        // steal the next `frame()` from tests (and from surfaces) that
-        // expect the next event to be a job write.
-        if others > 0 {
+        // The first incapable watcher already has its jobs on the connect
+        // frame. Raising there republishes ~150 ms later and steals the next
+        // frame from tests that expect a job write. A capable watcher is
+        // different: connect frames carry no notifications, so an Ask that
+        // arrived with nobody eligible still needs one published frame.
+        if others > 0 || capable {
             self.changes.raise();
         }
         RosterGuard {
@@ -120,7 +121,18 @@ impl SurfaceRoster {
     }
 
     pub fn configure_client(&self, id: String, preferences: ClientPreferences) {
-        self.lock().preferences.insert(id, preferences);
+        let changed = {
+            let mut inner = self.lock();
+            if inner.preferences.get(&id) == Some(&preferences) {
+                false
+            } else {
+                inner.preferences.insert(id, preferences);
+                true
+            }
+        };
+        if changed {
+            self.changes.raise();
+        }
     }
     pub fn targets(
         &self,
@@ -129,6 +141,7 @@ impl SurfaceRoster {
         kind: &str,
     ) -> Vec<(String, u64, bool)> {
         let inner = self.lock();
+        let fallback = ClientPreferences::notifying();
         let mut clients: Vec<_> = inner
             .clients
             .iter()
@@ -136,9 +149,7 @@ impl SurfaceRoster {
                 if !client.capable {
                     return false;
                 }
-                let Some(p) = inner.preferences.get(&client.instance) else {
-                    return false;
-                };
+                let p = inner.preferences.get(&client.instance).unwrap_or(&fallback);
                 if !p.enabled {
                     return false;
                 }
@@ -210,10 +221,10 @@ impl SurfaceRoster {
             .collect();
         clients.sort_by_key(|(id, client)| {
             (
-                ["macos", "windows", "vscode", "tmux"]
+                super::notify::PREFER
                     .iter()
                     .position(|s| *s == client.surface)
-                    .unwrap_or(4),
+                    .unwrap_or(super::notify::PREFER.len()),
                 &client.instance,
                 **id,
             )
@@ -228,7 +239,12 @@ impl SurfaceRoster {
                 (
                     c.instance.clone(),
                     *id,
-                    inner.preferences[&c.instance].sound && level >= 3,
+                    inner
+                        .preferences
+                        .get(&c.instance)
+                        .unwrap_or(&fallback)
+                        .sound
+                        && level >= 3,
                 )
             })
             .collect()
@@ -278,7 +294,7 @@ struct Client {
     instance: String,
     capable: bool,
 }
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientPreferences {
     #[serde(default)]
@@ -312,6 +328,21 @@ pub struct ClientPreferences {
     #[serde(default)]
     pub muted_projects: Vec<String>,
 }
+impl ClientPreferences {
+    /// A surface that asked to execute notifications and has not PUT its own
+    /// settings yet. An explicit PUT still wins, including `enabled: false`.
+    fn notifying() -> Self {
+        serde_json::from_value(serde_json::json!({
+            "enabled": true,
+            "failure": true,
+            "unresponsive": true,
+            "longSuccess": true,
+            "sound": true
+        }))
+        .expect("notification defaults")
+    }
+}
+
 fn default_floor() -> u64 {
     2
 }

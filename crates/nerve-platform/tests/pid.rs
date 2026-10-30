@@ -5,7 +5,7 @@
 
 use std::process::Command;
 
-use nerve_platform::pid::{PidState, is_alive, state};
+use nerve_platform::pid::{PidState, is_alive, start_token, state};
 
 /// A child that has been waited on. On Windows the handle is only released by
 /// the `wait`, which is the one place the two OSes differ in observable timing
@@ -60,4 +60,47 @@ fn init_exists_even_when_we_may_not_signal_it() {
     // pid 1 is always running and usually not ours to signal — exactly the
     // case the `Denied` state exists for.
     assert_ne!(state(1), PidState::Dead);
+}
+
+#[test]
+fn a_live_process_has_a_stable_start_token() {
+    let me = std::process::id() as i32;
+    let token = start_token(me).expect("our process has a start token");
+    assert_eq!(start_token(me).as_deref(), Some(token.as_str()));
+    // pid <= 1 is not a producer and is not probed.
+    assert!(start_token(0).is_none());
+    assert!(start_token(1).is_none());
+    assert!(start_token(-1).is_none());
+}
+
+/// Kills the child on every path out, including a failed assertion.
+struct ReapChild(Option<std::process::Child>);
+
+impl Drop for ReapChild {
+    fn drop(&mut self) {
+        if let Some(child) = self.0.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+#[test]
+fn a_child_start_token_differs_from_ours_while_it_lives() {
+    let mut command = if cfg!(windows) {
+        let mut c = Command::new("ping");
+        c.args(["-n", "31", "127.0.0.1"]);
+        c
+    } else {
+        let mut c = Command::new("sleep");
+        c.arg("30");
+        c
+    };
+    let child = command.spawn().expect("spawn a process that stays up");
+    let child = ReapChild(Some(child));
+    let pid = child.0.as_ref().expect("child").id() as i32;
+    let token = start_token(pid);
+    assert!(token.is_some(), "pid {pid}");
+    assert_eq!(start_token(pid), token);
+    assert_ne!(token, start_token(std::process::id() as i32));
 }

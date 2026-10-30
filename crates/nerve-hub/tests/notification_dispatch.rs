@@ -116,3 +116,35 @@ fn all_delivers_to_distinct_enabled_instances_and_terminal_success_is_hub_filter
     assert_eq!(events[0]["kind"], "longSuccess");
     assert_eq!(events[0]["target"], "a");
 }
+
+#[test]
+fn undelivered_ask_is_retried_when_a_client_becomes_eligible() {
+    let roster = SurfaceRoster::new(ChangeSignal::new());
+    let mut policy = Notifications::default();
+    assert!(policy.evaluate(&ask("required"), &roster).is_empty());
+    roster.configure_client("mac".into(), preferences(true));
+    let _mac = roster.subscribe_client("macos", "mac", true);
+    let events = policy.evaluate(&ask("required"), &roster);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["target"], "mac");
+    assert!(policy.evaluate(&ask("required"), &roster).is_empty());
+}
+
+#[test]
+fn tether_notifies_without_a_preference_put_and_loses_to_macos() {
+    let roster = SurfaceRoster::new(ChangeSignal::new());
+    let _tether = roster.subscribe_client("tether", "tether", true);
+    let mut policy = Notifications::default();
+    let events = policy.evaluate(&ask("required"), &roster);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["target"], "tether");
+
+    let roster = SurfaceRoster::new(ChangeSignal::new());
+    roster.configure_client("mac".into(), preferences(true));
+    let _tether = roster.subscribe_client("tether", "tether", true);
+    let _mac = roster.subscribe_client("macos", "mac", true);
+    let mut policy = Notifications::default();
+    let events = policy.evaluate(&ask("required"), &roster);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["target"], "mac");
+}

@@ -14,6 +14,9 @@ struct HubProtocolTests {
   job.outcome = .failure;job.health = .unresponsive
   precondition(job.status == status,"surface derived status from producer facets")
   precondition(frame.notifications.isEmpty)
+  precondition(ActionService.terminalScript(device: "/dev/ttys006")?.contains("\"/dev/ttys006\"") == true)
+  precondition(ActionService.terminalScript(device: "/dev/ttys006; beep") == nil)
+  precondition(ActionService.terminalScript(device: "/tmp/ttys006") == nil)
   print("PASS hub projection decoding, version rejection, and surface authority boundary")
  }
 }

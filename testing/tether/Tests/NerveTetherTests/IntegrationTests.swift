@@ -91,26 +91,23 @@ struct IntegrationTests {
     #expect(content?.contains("Codex · refactor") == true)
     let connected = try await page.evaluateJavaScript("document.getElementById('connection').title") as? String
     #expect(connected == "Connected")
-    let symbols = try await page.evaluateJavaScript("document.querySelectorAll('[data-filter] .dot').length") as? Int
-    #expect(symbols == 8)
-    let visibleLabels = try await page.evaluateJavaScript("Array.from(document.querySelectorAll('[data-filter]')).every(button => button.textContent === '' && button.hasAttribute('aria-label'))") as? Bool
-    #expect(visibleLabels == true)
+    let header = try await page.evaluateJavaScript(
+      "document.getElementById('settings') == null && document.getElementById('search-toggle') == null && document.getElementById('confirm') == null && document.getElementById('refresh')?.getAttribute('aria-label') === 'Refresh' && document.getElementById('clear')?.getAttribute('aria-label') === 'Clear all' && document.getElementById('group')?.tagName === 'SELECT' && document.getElementById('group')?.getAttribute('aria-label') === 'Group by Machine' && [...document.querySelector('.group').childNodes].every(node => node.nodeType !== Node.TEXT_NODE || !node.textContent.trim())"
+    ) as? Bool
+    #expect(header == true)
+    let macOSRow = try await page.evaluateJavaScript(
+      "document.getElementById('ribbon') == null && document.querySelector('[data-filter]') == null && document.querySelector('.rail') == null && getComputedStyle(document.querySelector('.name')).fontSize === '13px' && document.querySelector('[data-job-id=stream]') != null"
+    ) as? Bool
+    #expect(macOSRow == true)
     let statusWords = try await page.evaluateJavaScript("document.querySelectorAll('.state').length") as? Int
-    #expect(statusWords == 0)
-    _ = try await page.evaluateJavaScript("document.querySelector('[data-filter=problem]').click()")
-    let filteredRows = try await page.evaluateJavaScript("document.querySelectorAll('.row').length") as? Int
-    #expect(filteredRows == 1)
-    _ = try await page.evaluateJavaScript("document.querySelector('[data-filter=all]').click()")
-    _ = try await page.evaluateJavaScript("document.querySelector('[data-filter=monitor]').click()")
-    let monitor = try await page.evaluateJavaScript("document.querySelector('.row')?.dataset.jobId") as? String
-    #expect(monitor == "stream")
-    _ = try await page.evaluateJavaScript("document.querySelector('[data-filter=all]').click(); document.getElementById('search-toggle').click(); document.getElementById('search').value = 'CODEX'; document.getElementById('search').dispatchEvent(new Event('input'))")
+    #expect((statusWords ?? 0) > 0)
+    _ = try await page.evaluateJavaScript("document.getElementById('search-box').hidden = false; document.getElementById('search').value = 'CODEX'; document.getElementById('search').dispatchEvent(new Event('input'))")
     let searchRows = try await page.evaluateJavaScript("document.querySelectorAll('.row').length") as? Int
     #expect(searchRows == 1)
-    _ = try await page.evaluateJavaScript("document.getElementById('search').value = ''; document.getElementById('search').dispatchEvent(new Event('input')); document.getElementById('search-toggle').click(); document.querySelector('summary').click(); document.querySelector('summary').focus(); window.heldRow = document.querySelector('.row'); void 0")
+    _ = try await page.evaluateJavaScript("document.getElementById('search').value = ''; document.getElementById('search').dispatchEvent(new Event('input')); document.getElementById('search-box').hidden = true; document.querySelector('.more summary').click(); document.querySelector('.jump').focus(); window.heldRow = document.querySelector('.row'); void 0")
     frame["revision"] = 2
     try await transport.send(frame)
-    let stable = try await page.evaluateJavaScript("window.heldRow === document.querySelector('.row') && window.heldRow.open && document.activeElement === window.heldRow.firstElementChild") as? Bool
+    let stable = try await page.evaluateJavaScript("window.heldRow === document.querySelector('.row') && window.heldRow.querySelector('.more').open && document.activeElement === window.heldRow.querySelector('.jump')") as? Bool
     #expect(stable == true)
     let timeline = try await page.evaluateJavaScript("document.querySelector('.timeline')?.textContent.includes('Build failed')") as? Bool
     #expect(timeline == true)
@@ -132,7 +129,7 @@ struct IntegrationTests {
     try await transport.send(older)
     let ignored = try await page.evaluateJavaScript("document.querySelectorAll('.row').length") as? Int
     #expect(ignored == rows, "older revisions from the same hub cannot erase current rows")
-    _ = try await page.evaluateJavaScript("document.querySelector('summary').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowDown', bubbles:true}))")
+    _ = try await page.evaluateJavaScript("document.querySelector('.jump').focus(); document.querySelector('.jump').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowDown', bubbles:true}))")
     let next = try await page.evaluateJavaScript("document.activeElement?.parentElement.dataset.jobId") as? String
     #expect(next == "codex")
     _ = try await page.evaluateJavaScript("tether._event({type:'end'})")
@@ -140,7 +137,7 @@ struct IntegrationTests {
     #expect(stale == true)
     frame["revision"] = 4
     try await transport.send(frame)
-    _ = try await page.evaluateJavaScript("document.querySelector('.row').open = false; document.activeElement.blur()")
+    _ = try await page.evaluateJavaScript("const more = document.querySelector('.more'); if (more) more.open = false; document.activeElement.blur()")
     if let output = ProcessInfo.processInfo.environment["NERVE_PLUGIN_SNAPSHOT"] {
       let image = try await page.takeSnapshot(configuration: nil)
       let data = try #require(image.tiffRepresentation)
@@ -153,8 +150,8 @@ struct IntegrationTests {
     restart["jobs"] = []
     restart["machines"] = [["id": "remote", "host": "gpu-box", "state": "offline"]]
     try await transport.send(restart)
-    let replaced = try await page.evaluateJavaScript("document.querySelectorAll('.row').length === 0 && document.querySelector('.machine')?.textContent === 'gpu-box'") as? Bool
-    #expect(replaced == true, "a new hub replaces its snapshot, including offline machines without jobs")
+    let replaced = try await page.evaluateJavaScript("document.querySelectorAll('.row').length === 0 && document.querySelector('.machine') == null") as? Bool
+    #expect(replaced == true, "a new hub replaces its snapshot and leaves disconnected machines out of the panel")
     _ = try await background.webView(for: backgroundSession)?.evaluateJavaScript("tether._event({type:'end'})")
     for _ in 0..<100 where tabMarks[backgroundSession]?.isEmpty != true { try await Task.sleep(for: .milliseconds(10)) }
     #expect(tabMarks[backgroundSession] == [], "a disconnected stream cannot leave a live tab mark")

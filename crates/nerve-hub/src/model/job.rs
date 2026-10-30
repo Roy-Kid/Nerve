@@ -15,6 +15,9 @@ use super::time::WireTime;
 /// Forward-compatible open fields from producers (`pid`, `slot`, `role`, …).
 pub type Extensions = Map<String, Value>;
 
+/// Opaque process-start token stored beside `extensions.pid`.
+const PID_START: &str = "pidStart";
+
 /// A unit of work on a machine (session, build, test, deploy, …).
 ///
 /// `id`, `createdAt`, `updatedAt` and `version` are required: every hook sends
@@ -143,5 +146,26 @@ impl Job {
             _ => return None,
         };
         (pid > 1).then_some(pid)
+    }
+
+    /// Start token recorded beside [`Self::producer_pid`].
+    ///
+    /// Missing means the OS did not say. That is not proof the process died.
+    pub(crate) fn pid_start(&self) -> Option<&str> {
+        let text = self.extensions.get(PID_START)?.as_str()?;
+        (!text.is_empty()).then_some(text)
+    }
+
+    /// Replace the recorded start token. `None` and `""` both clear it.
+    pub(crate) fn set_pid_start(&mut self, token: Option<String>) {
+        match token {
+            Some(token) if !token.is_empty() => {
+                self.extensions
+                    .insert(PID_START.to_string(), Value::String(token));
+            }
+            _ => {
+                self.extensions.remove(PID_START);
+            }
+        }
     }
 }

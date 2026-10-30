@@ -346,7 +346,7 @@ public final class SettingsStore {
     static let ribbonLengthScaleRange: ClosedRange<Double> = 0.5...4.0
     static let ribbonThicknessRange: ClosedRange<Double> = 3...12
 
-    static let defaultPanelWidth: Double = 340
+    static let defaultPanelWidth: Double = 460
     static let defaultPanelHeight: Double = 360
     static let panelWidthRange: ClosedRange<Double> = 280...560
     static let panelHeightRange: ClosedRange<Double> = 180...720

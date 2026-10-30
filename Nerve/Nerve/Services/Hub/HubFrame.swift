@@ -29,6 +29,9 @@ struct HubFrame: Decodable, Sendable, Equatable {
     var timelines: [String: [TimelineEntry]]
     /// Hub policy metadata; execution is driven by notification commands.
     var notify: NotifyLease
+    /// The hub's one status per terminal. Every surface that marks a
+    /// terminal reads this; none selects its own.
+    var tabIndicators: [HubTabIndicator] = []
 
     init(
         jobs: [Job] = [],
@@ -45,7 +48,7 @@ struct HubFrame: Decodable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case jobs
         case departed
-        case notify, protocolVersion, notifications, summary, hubInstanceId, revision
+        case notify, protocolVersion, notifications, summary, hubInstanceId, revision, tabIndicators
     }
 
     init(from decoder: Decoder) throws {
@@ -62,6 +65,7 @@ struct HubFrame: Decodable, Sendable, Equatable {
         departed = gone.map(\.job)
         timelines = Self.timelines(from: live)
         notify = try c.decodeIfPresent(NotifyLease.self, forKey: .notify) ?? .empty
+        tabIndicators = (try? c.decode(LossyArray<HubTabIndicator>.self, forKey: .tabIndicators))?.elements ?? []
     }
 
     private static func timelines(from live: [PublishedJob]) -> [String: [TimelineEntry]] {
@@ -163,6 +167,17 @@ struct HubNotification: Decodable, Sendable, Equatable {
     var body: String
     var level: String
     var sound: Bool
+}
+
+/// `{target: {host, terminal}, status, label}`, as `projection::tab_indicators` writes it.
+struct HubTabIndicator: Decodable, Sendable, Equatable {
+    struct Target: Decodable, Sendable, Equatable {
+        var host: String
+        var terminal: String
+    }
+    var target: Target
+    var status: String
+    var label: String
 }
 
 struct HubSummary: Decodable, Sendable, Equatable {

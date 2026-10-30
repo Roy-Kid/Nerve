@@ -47,6 +47,28 @@ pub fn state(pid: i32) -> PidState {
     }
 }
 
+/// Opaque identity of when `pid` started.
+///
+/// [`state`] answers alive for a recycled pid. Comparing this token with the
+/// one recorded when the job reported the pid tells those apart. `None` means
+/// the OS would not say — that is not evidence of death. `pid <= 1` is not a
+/// producer and is not probed.
+pub fn start_token(pid: i32) -> Option<String> {
+    if pid <= 1 {
+        return None;
+    }
+    #[cfg(any(unix, windows))]
+    {
+        sys::start_token(pid)
+    }
+    // No probe for this target: same fail-open answer as [`state`].
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
 /// The boolean most callers want: anything but a definite "gone".
 pub fn is_alive(pid: i32) -> bool {
     !matches!(state(pid), PidState::Dead)
