@@ -4,30 +4,27 @@ import {
   jobWorkspace,
   pathFromOpenUrl,
 } from "../model/job";
-import { foreignAlias } from "../model/machine";
+import { sshHost } from "../model/machine";
 import { isAbsolutePath, isInside } from "../model/path";
-import { bestHost, type SshHost } from "./ssh";
 
 export interface TerminalHint {
   processId?: number;
 }
 
 export interface FocusContext {
-  localAlias?: string;
   workspaceFolders: readonly string[];
   terminals: readonly TerminalHint[];
   /** `vscode.env.remoteName`, e.g. `ssh-remote` / `wsl`. */
   remoteName?: string;
   /** Authority for a vscode-remote window (`ssh-remote+Host`). */
   remoteAuthority?: string;
-  sshHosts: readonly SshHost[];
 }
 
 export type FocusTarget =
   | { kind: "terminal"; processId: number }
   | { kind: "here" }
   | { kind: "folder"; path: string }
-  | { kind: "remote"; host: string; cwd?: string; alias: string }
+  | { kind: "remote"; host: string; cwd?: string }
   | { kind: "copy"; text: string; reason: string };
 
 function inFolders(path: string, folders: readonly string[]): boolean {
@@ -45,21 +42,14 @@ function breadcrumb(job: Job, fallback: string): FocusTarget {
   };
 }
 
-function remoteWindowMatches(
-  alias: string,
-  ctx: FocusContext,
-): boolean {
+/** This window is a remote one opened on the same ssh Host. */
+function remoteWindowMatches(host: string, ctx: FocusContext): boolean {
   if (!ctx.remoteName || !ctx.remoteAuthority) return false;
   const authority = ctx.remoteAuthority;
-  const host = authority.includes("+")
+  const window = authority.includes("+")
     ? authority.slice(authority.indexOf("+") + 1)
     : authority;
-  if (host.length === 0) return false;
-  return (
-    host.toLowerCase() === alias.toLowerCase() ||
-    bestHost(alias, [{ alias: host, hostName: host }]) !== undefined ||
-    bestHost(alias, ctx.sshHosts)?.toLowerCase() === host.toLowerCase()
-  );
+  return window.length > 0 && window.toLowerCase() === host.toLowerCase();
 }
 
 function rankLocal(job: Job, ctx: FocusContext): FocusTarget {
@@ -83,28 +73,14 @@ function rankLocal(job: Job, ctx: FocusContext): FocusTarget {
 }
 
 export function rankFocus(job: Job, ctx: FocusContext): FocusTarget {
-  const foreign = foreignAlias(job.alias, ctx.localAlias);
-  if (!foreign) return rankLocal(job, ctx);
-
-  if (remoteWindowMatches(foreign, ctx)) {
-    return rankLocal(job, ctx);
-  }
-
-  const host = bestHost(foreign, ctx.sshHosts);
-  if (host) {
-    return {
-      kind: "remote",
-      host,
-      cwd: jobWorkspace(job),
-      alias: foreign,
-    };
-  }
-  return breadcrumb(job, `${foreign} — no ssh host in ~/.ssh/config`);
+  const host = sshHost(job);
+  if (!host || remoteWindowMatches(host, ctx)) return rankLocal(job, ctx);
+  return { kind: "remote", host, cwd: jobWorkspace(job) };
 }
 
-export function focusActionTitle(job: Job, local?: string): string {
-  const foreign = foreignAlias(job.alias, local);
-  if (foreign) return `Open on ${foreign}`;
+export function focusActionTitle(job: Job): string {
+  const host = sshHost(job);
+  if (host) return `Open on ${host}`;
   if (job.location?.openURL) return "Open";
   return "Focus";
 }

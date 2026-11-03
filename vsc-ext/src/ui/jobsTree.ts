@@ -11,7 +11,6 @@ import {
   paintedColor,
 } from "../model/job";
 import { focusActionTitle } from "../focus/rank";
-import { foreignAlias, localAlias } from "../model/machine";
 import { statusLabel, statusOf } from "../model/status";
 import type { JobStore } from "../store/jobStore";
 
@@ -22,9 +21,7 @@ export class AliasItem extends vscode.TreeItem {
     readonly alias: string,
     readonly jobs: Job[],
   ) {
-    const local = localAlias();
-    const label = foreignAlias(alias, local) ? alias : alias || "this machine";
-    super(label, vscode.TreeItemCollapsibleState.Expanded);
+    super(alias || "this machine", vscode.TreeItemCollapsibleState.Expanded);
     this.contextValue = "nerve.alias";
     const worst = jobs.length ? statusOf([...jobs].sort(compareJobs)[0]!) : "inactive";
     this.iconPath = statusIcon(worst);
@@ -65,7 +62,7 @@ function rowTooltip(job: Job): vscode.MarkdownString {
   ].filter((value): value is string => Boolean(value));
   const markdown = new vscode.MarkdownString();
   markdown.appendMarkdown(`**${job.name || job.id}** · ${statusLabel(job)}\n\n`);
-  markdown.appendMarkdown(`${focusActionTitle(job, localAlias())}\n\n`);
+  markdown.appendMarkdown(`${focusActionTitle(job)}\n\n`);
   if (bits.length > 0) markdown.appendMarkdown(`${bits.join(" · ")}\n\n`);
   const prompt = lastPrompt(job);
   if (prompt) markdown.appendMarkdown(`Prompt: ${prompt}`);

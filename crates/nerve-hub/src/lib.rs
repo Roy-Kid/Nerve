@@ -32,7 +32,7 @@ use tokio::net::TcpListener;
 use tokio::time::sleep;
 
 use crate::clock::SystemClock;
-use crate::state::{JobStore, LocalAlias, SignalProbe};
+use crate::state::{JobStore, LocalAlias, MachineName, SignalProbe};
 
 /// The one address the hub ever listens on.
 ///
@@ -105,6 +105,7 @@ impl Hub {
             LocalAlias::resolve(),
             Arc::new(SignalProbe),
         )
+        .with_machine_name(MachineName::resolve())
     }
 }
 

@@ -12,12 +12,34 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+/// Files that once lived under `~/.config/nerve`.
+const MOVED_FILES: [&str; 2] = ["machine-id", "machines.json"];
+
+/// `~/.nerve`: this machine's identity and the machines it reaches.
 fn config_dir() -> PathBuf {
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
-    home.join(".config/nerve")
+    let directory = home.join(".nerve");
+    adopt_legacy(&home.join(".config/nerve"), &directory);
+    directory
+}
+
+/// Carry the old files over once. The id above all: a new one would make
+/// every hub that knew this machine see a stranger.
+fn adopt_legacy(legacy: &std::path::Path, directory: &std::path::Path) {
+    for name in MOVED_FILES {
+        let (from, to) = (legacy.join(name), directory.join(name));
+        if to.exists() || !from.is_file() {
+            continue;
+        }
+        if std::fs::create_dir_all(directory).is_ok()
+            && let Err(error) = std::fs::rename(&from, &to)
+        {
+            tracing::warn!(%error, file = name, "could not move from ~/.config/nerve");
+        }
+    }
 }
 pub fn machine_id() -> String {
     use std::io::Write;
@@ -241,7 +263,11 @@ impl Machines {
             let mut delay = 1;
             while !stop.load(Ordering::Acquire) {
                 this.set_worker_state(&config, "connecting", None, &stop);
-                match this.session(&config, &stop) {
+                let mut attached = false;
+                let result = this.session(&config, &stop, &mut attached);
+                let (wait, next) = retry_wait(delay, attached);
+                delay = next;
+                match result {
                     Ok(()) => (),
                     Err(error) => {
                         if !stop.load(Ordering::Acquire) {
@@ -249,13 +275,12 @@ impl Machines {
                         }
                     }
                 }
-                for _ in 0..delay * 10 {
+                for _ in 0..wait * 10 {
                     if stop.load(Ordering::Acquire) {
                         return;
                     }
                     std::thread::sleep(Duration::from_millis(100));
                 }
-                delay = (delay * 2).min(30);
             }
         });
         Ok(())
@@ -293,7 +318,12 @@ impl Machines {
         drop(store);
         self.changes.raise();
     }
-    fn session(&self, config: &MachineConfig, stop: &Arc<AtomicBool>) -> Result<(), String> {
+    fn session(
+        &self,
+        config: &MachineConfig,
+        stop: &Arc<AtomicBool>,
+        attached: &mut bool,
+    ) -> Result<(), String> {
         let mut ensure = Command::new("ssh")
             .args([
                 "-o",
@@ -422,6 +452,7 @@ impl Machines {
             }
         }
         let _finish = Finish(finished);
+        *attached = true;
         for line in BufReader::new(response).lines() {
             *last_read.lock().unwrap() = Instant::now();
             if stop.load(Ordering::Acquire) {
@@ -442,6 +473,14 @@ impl Machines {
         }
         Err("remote hub stream disconnected".into())
     }
+}
+
+/// Seconds to wait before the next attempt, and the wait after that. Failures
+/// double it up to 30. A session that attached was a link that held, not a
+/// failing one: the try after it drops starts from one second again.
+fn retry_wait(delay: u64, attached: bool) -> (u64, u64) {
+    let wait = if attached { 1 } else { delay };
+    (wait, (wait * 2).min(30))
 }
 
 fn wildcard(pattern: &str, text: &str) -> bool {
@@ -549,6 +588,11 @@ fn apply_remote(store: &mut JobStore, config: &MachineConfig, frame: &Value) -> 
             .to_owned();
         job["id"] = json!(format!("{origin}/{original}"));
         job["extensions"]["sshHost"] = json!(config.host);
+        // The machine is whichever one `ssh <Host>` reaches. Its own hub's
+        // name for itself is not what a terminal here was opened with.
+        if job["extensions"]["terminal"].is_object() {
+            job["extensions"]["terminal"]["host"] = json!(config.host.to_lowercase());
+        }
         if let Some(group) = job["display"]["groupId"].as_str().map(str::to_owned) {
             job["display"]["groupId"] = json!(format!("{origin}/{group}"));
             job["extensions"]["hub"] = job["display"].clone();
@@ -620,5 +664,61 @@ mod tests {
         let empty = json!({"protocolVersion":2,"machineId":"remote-a","jobs":[]});
         apply_remote(&mut store, &config(), &empty).unwrap();
         assert!(store.jobs_json().as_array().unwrap().is_empty());
+    }
+
+    fn on_tty(mut frame: Value) -> Value {
+        frame["jobs"][0]["extensions"]["terminal"] =
+            json!({"host":"arrhenius1.kemi.uu.se","terminal":"/dev/pts/3"});
+        frame
+    }
+    #[test]
+    fn a_remote_terminal_is_named_by_the_ssh_host_that_reached_it() {
+        let mut bare = store();
+        let mut store = store();
+        let reached = MachineConfig {
+            host: "Arrhenius".into(),
+            ..config()
+        };
+        apply_remote(&mut store, &reached, &on_tty(frame("remote-a"))).unwrap();
+        let jobs = store.jobs_json();
+        assert_eq!(
+            jobs[0]["extensions"]["terminal"],
+            json!({"host":"arrhenius","terminal":"/dev/pts/3"})
+        );
+        assert_eq!(
+            crate::projection::tab_indicators(&jobs)[0]["target"]["host"],
+            "arrhenius"
+        );
+        // A job that named no terminal is not given one.
+        apply_remote(&mut bare, &reached, &frame("remote-a")).unwrap();
+        assert!(bare.jobs_json()[0]["extensions"]["terminal"].is_null());
+    }
+    #[test]
+    fn failures_double_the_wait_and_a_held_link_starts_over() {
+        assert_eq!(retry_wait(1, false), (1, 2));
+        assert_eq!(retry_wait(16, false), (16, 30));
+        assert_eq!(retry_wait(30, false), (30, 30));
+        assert_eq!(retry_wait(30, true), (1, 2));
+    }
+    #[test]
+    fn legacy_files_move_once_and_never_overwrite() {
+        let root = std::env::temp_dir().join(format!("nerve-adopt-{}", std::process::id()));
+        let (legacy, directory) = (root.join(".config/nerve"), root.join(".nerve"));
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("machine-id"), "m-old\n").unwrap();
+        std::fs::write(legacy.join("machines.json"), "[]").unwrap();
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("machines.json"), "[1]").unwrap();
+        adopt_legacy(&legacy, &directory);
+        assert_eq!(
+            std::fs::read_to_string(directory.join("machine-id")).unwrap(),
+            "m-old\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(directory.join("machines.json")).unwrap(),
+            "[1]"
+        );
+        assert!(!legacy.join("machine-id").exists());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

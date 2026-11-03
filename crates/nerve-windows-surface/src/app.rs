@@ -15,7 +15,6 @@ use std::time::{Duration, Instant};
 
 use eframe::{App as EframeApp, CreationContext, Frame};
 use egui::{Context, ViewportCommand};
-use nerve_surface_core::machine;
 use nerve_surface_core::store::JobsStore;
 use time::OffsetDateTime;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -48,7 +47,6 @@ pub struct App {
     store: JobsStore,
     settings: Settings,
     hub_installed: bool,
-    local_alias: Option<String>,
 
     tray: Option<TrayIcon>,
     drawn: Option<Signature>,
@@ -113,7 +111,6 @@ impl App {
             store,
             settings,
             hub_installed,
-            local_alias: machine::local_alias().map(str::to_string),
             tray,
             drawn: None,
             tooltip: None,
@@ -225,12 +222,7 @@ impl App {
             PanelAction::Open(id) => {
                 let snapshot = self.store.snapshot();
                 if let Some(job) = snapshot.jobs.iter().find(|job| job.id == id) {
-                    let outcome = actions::perform(
-                        job,
-                        self.local_alias.as_deref(),
-                        &SystemOpener,
-                        &mut SystemClipboard,
-                    );
+                    let outcome = actions::perform(job, &SystemOpener, &mut SystemClipboard);
                     self.note = Some((outcome.message, Instant::now()));
                     // Taking the user somewhere means getting out of the way.
                     if outcome.opened {

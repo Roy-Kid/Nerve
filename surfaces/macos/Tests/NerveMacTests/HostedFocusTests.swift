@@ -35,26 +35,56 @@ struct HostedFocusTests {
     #expect(message.isEmpty)
   }
 
-  @Test func aRemoteWorkspaceNeverReachesTheLocalHostLanding() {
-    var landed = false
-    PanelFocusBridge.land = { _ in
-      landed = true
+  @Test func aRemoteJobOffersOnlyItsTerminalThenItsSSHHost() {
+    var seen: PanelFocusBridge.Request?
+    PanelFocusBridge.land = { request in
+      seen = request
+      return false
+    }
+    var opened: [URL] = []
+    ActionService.openURL = { opened.append($0); return true }
+    defer {
+      PanelFocusBridge.land = nil
+      ActionService.openURL = { NSWorkspace.shared.open($0) }
+    }
+
+    var job = Job.make(
+      id: "remote", name: "Build", alias: "arrhenius1", producer: ProducerInfo(id: "claude"))
+    job.extensions["sshHost"] = .string("Arrhenius")
+    job.extensions["terminal"] = .object([
+      "host": .string("arrhenius"), "terminal": .string("/dev/pts/3"),
+    ])
+    job.context = ContextInfo(project: nil, workspace: "/tmp/proj", labels: nil)
+    job.location = LocationInfo(openURL: "file:///tmp/proj", focusHint: "/tmp/proj", logPath: nil)
+
+    #expect(ActionService.focusActionTitle(for: job) == "Connect to Arrhenius")
+    let result = ActionService.openLocation(job)
+    // That machine's folder is not this one's: a local tab in /tmp/proj
+    // must not be chosen for it.
+    #expect(seen == PanelFocusBridge.Request(
+      host: "arrhenius", terminal: "/dev/pts/3", directory: nil, url: nil))
+    #expect(opened == [URL(string: "ssh://Arrhenius")!])
+    guard case .succeeded = result else {
+      Issue.record("a remote job the host could not land opens its ssh Host")
+      return
+    }
+  }
+
+  @Test func aJobWithoutAnSSHHostIsThisMacsWhateverItsAlias() {
+    var seen: PanelFocusBridge.Request?
+    PanelFocusBridge.land = { request in
+      seen = request
       return true
     }
     defer { PanelFocusBridge.land = nil }
-
     var job = Job.make(
-      id: "remote", name: "Build", alias: LocalMachine.alias + "-remote",
-      producer: ProducerInfo(id: "claude"))
+      id: "local", name: "Build", alias: "some-old-name", producer: ProducerInfo(id: "claude"))
     job.context = ContextInfo(project: nil, workspace: "/tmp/proj", labels: nil)
-    // No remote URL or SSH host: the existing remote path returns failure
-    // instead of matching a local tab that happens to use /tmp/proj.
-    let result = ActionService.openLocation(job)
-    #expect(!landed)
-    guard case .failed = result else {
-      Issue.record("an unmatched remote workspace must not report local success")
+    guard case .succeeded = ActionService.openLocation(job) else {
+      Issue.record("the host landed it")
       return
     }
+    #expect(seen?.directory == "/tmp/proj")
   }
 
   @Test func anUnmatchedHostLandingDoesNotReportSuccess() {

@@ -184,11 +184,11 @@ impl PanePreview {
     /// turn to this job's window, which is what makes one shared session show
     /// the row under the cursor rather than whatever it was left on.
     fn pane_to_show(&mut self, job: &JobView) -> Option<String> {
-        let target = JobTarget::of(job, machine::local_alias())?;
+        let target = JobTarget::of(job)?;
         match &target {
             JobTarget::Local { .. } => panes::find_pane_for_target(&target, job, &self.sidebar),
-            JobTarget::Remote { alias } => {
-                let route = panes::find_ssh_route(alias, &self.sidebar)?;
+            JobTarget::Remote { host } => {
+                let route = panes::find_ssh_route(host, &self.sidebar)?;
                 if let Some(pid) = job.extensions.pid {
                     self.remote.request(&route.destination, pid);
                 }
@@ -204,8 +204,8 @@ impl PanePreview {
     /// that editor's integrated terminal) fall back to opening that URL.
     /// Plain `file://` workspace URIs are never opened as apps from here.
     pub fn jump_to_job(&mut self, job: &JobView) -> JumpResult {
-        if let Some(alias) = machine::foreign_alias(&job.alias, machine::local_alias()) {
-            return self.jump_to_remote_job(job, alias);
+        if let Some(host) = machine::ssh_host(job) {
+            return self.jump_to_remote_job(job, host);
         }
         let target =
             panes::find_pane_for_job(job, &self.sidebar).or_else(|| self.swapped_with.clone());
@@ -244,8 +244,8 @@ impl PanePreview {
     ///
     /// The remote call runs on a thread of its own: the local jump has already
     /// happened, and a sidebar must not freeze on someone else's network.
-    fn jump_to_remote_job(&mut self, job: &JobView, alias: &str) -> JumpResult {
-        let route = panes::find_ssh_route(alias, &self.sidebar);
+    fn jump_to_remote_job(&mut self, job: &JobView, host: &str) -> JumpResult {
+        let route = panes::find_ssh_route(host, &self.sidebar);
         self.settle(job);
 
         let Some(route) = route.filter(|route| tmux::pane_exists(&route.pane)) else {
@@ -494,8 +494,8 @@ impl Drop for PanePreview {
 /// Naming the machine is the actionable half: ssh there (or open the sidebar
 /// there, which is free — CLAUDE.md invariant 5) and the job is one pane away.
 fn nothing_to_show(job: &JobView) -> String {
-    if let Some(alias) = machine::foreign_alias(&job.alias, machine::local_alias()) {
-        return format!("{alias} is another machine — no ssh pane here");
+    if let Some(host) = machine::ssh_host(job) {
+        return format!("{host} is another machine — no ssh pane here");
     }
     let path = job_path(job)
         .map(|path| path.display().to_string())

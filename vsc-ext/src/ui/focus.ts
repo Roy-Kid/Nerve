@@ -1,20 +1,6 @@
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import * as vscode from "vscode";
 import { rankFocus, type FocusTarget } from "../focus/rank";
-import { parseSshConfig, type SshHost } from "../focus/ssh";
 import type { Job } from "../model/job";
-import { localAlias } from "../model/machine";
-
-function loadSshHosts(): SshHost[] {
-  try {
-    const text = readFileSync(join(homedir(), ".ssh", "config"), "utf8");
-    return parseSshConfig(text);
-  } catch {
-    return [];
-  }
-}
 
 export async function performFocus(job: Job): Promise<string> {
   const folders = (vscode.workspace.workspaceFolders ?? []).map(
@@ -34,12 +20,10 @@ export async function performFocus(job: Job): Promise<string> {
   );
 
   const target = rankFocus(job, {
-    localAlias: localAlias(),
     workspaceFolders: folders,
     terminals,
     remoteName: vscode.env.remoteName,
     remoteAuthority: remoteAuthority(),
-    sshHosts: loadSshHosts(),
   });
   return applyTarget(target);
 }
@@ -81,7 +65,7 @@ async function applyTarget(target: FocusTarget): Promise<string> {
       await vscode.commands.executeCommand("vscode.openFolder", uri, {
         forceNewWindow: true,
       });
-      return `Open on ${target.alias}`;
+      return `Open on ${target.host}`;
     }
     case "copy": {
       await vscode.env.clipboard.writeText(target.text);

@@ -6,8 +6,6 @@ use nerve_windows_surface::actions::shell::RecordingOpener;
 use nerve_windows_surface::actions::{copy, perform};
 use serde_json::json;
 
-const LOCAL: Option<&str> = Some("thinkpad");
-
 fn job(value: serde_json::Value) -> JobView {
     nerve_surface_core::testkit::job(value)
 }
@@ -21,7 +19,7 @@ fn a_local_folder_is_opened() {
     let opener = RecordingOpener::default();
     let mut clipboard = RecordingClipboard::default();
 
-    let outcome = perform(&row, LOCAL, &opener, &mut clipboard);
+    let outcome = perform(&row, &opener, &mut clipboard);
 
     assert!(outcome.succeeded, "{}", outcome.message);
     assert!(outcome.opened);
@@ -38,7 +36,7 @@ fn an_ide_deep_link_goes_to_the_shell_untouched() {
     let opener = RecordingOpener::default();
     let mut clipboard = RecordingClipboard::default();
 
-    perform(&row, LOCAL, &opener, &mut clipboard);
+    perform(&row, &opener, &mut clipboard);
 
     assert_eq!(
         opener.opened.borrow().as_slice(),
@@ -52,13 +50,13 @@ fn an_ide_deep_link_goes_to_the_shell_untouched() {
 #[test]
 fn another_machines_path_is_copied_and_never_opened() {
     let row = job(json!({
-        "id": "j", "name": "nerve", "alias": "buildbox",
+        "id": "j", "name": "nerve", "alias": "buildbox", "extensions": { "sshHost": "buildbox" },
         "location": { "openURL": "file:///C:/work/nerve" }
     }));
     let opener = RecordingOpener::default();
     let mut clipboard = RecordingClipboard::default();
 
-    let outcome = perform(&row, LOCAL, &opener, &mut clipboard);
+    let outcome = perform(&row, &opener, &mut clipboard);
 
     assert!(outcome.succeeded);
     assert!(!outcome.opened, "keep the copy explanation visible");
@@ -77,7 +75,7 @@ fn a_job_with_nowhere_to_go_says_so_without_copying() {
     let opener = RecordingOpener::default();
     let mut clipboard = RecordingClipboard::default();
 
-    let outcome = perform(&row, LOCAL, &opener, &mut clipboard);
+    let outcome = perform(&row, &opener, &mut clipboard);
 
     assert!(!outcome.succeeded);
     assert!(opener.opened.borrow().is_empty());
@@ -112,7 +110,7 @@ fn a_job_offering_remote_actions_is_still_only_opened() {
     let opener = RecordingOpener::default();
     let mut clipboard = RecordingClipboard::default();
 
-    perform(&row, LOCAL, &opener, &mut clipboard);
+    perform(&row, &opener, &mut clipboard);
 
     let opened = opener.opened.borrow();
     assert_eq!(opened.len(), 1);

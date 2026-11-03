@@ -9,11 +9,12 @@ function job(value: Record<string, unknown>): Job {
 }
 
 const local = {
-  localAlias: "macbook",
   workspaceFolders: ["/Users/me/work/nerve"],
   terminals: [] as { processId?: number }[],
-  sshHosts: [{ alias: "Arrhenius", hostName: "arrhenius1.example" }],
 };
+
+/** A job the hub reached through `ssh Arrhenius`. */
+const onArrhenius = { alias: "arrhenius1", extensions: { sshHost: "Arrhenius" } };
 
 suite("focus ranking", () => {
   test("pid matching a terminal wins", () => {
@@ -36,57 +37,38 @@ suite("focus ranking", () => {
     const target = rankFocus(
       job({
         alias: "arrhenius1",
-        extensions: { pid: 99 },
+        extensions: { pid: 99, sshHost: "Arrhenius" },
         context: { workspace: "/nobackup/proj" },
       }),
       { ...local, terminals: [{ processId: 99 }] },
     );
-    assert.equal(target.kind, "remote");
-    if (target.kind === "remote") {
-      assert.equal(target.host, "Arrhenius");
-      assert.equal(target.alias, "arrhenius1");
-    }
+    assert.deepEqual(target, { kind: "remote", host: "Arrhenius", cwd: "/nobackup/proj" });
   });
 
   test("a foreign file url is never a local folder", () => {
     const target = rankFocus(
-      job({
-        alias: "arrhenius1",
-        location: { openURL: "file:///nobackup/proj/molcrafts" },
-      }),
+      job({ ...onArrhenius, location: { openURL: "file:///nobackup/proj/molcrafts" } }),
       local,
     );
     assert.notEqual(target.kind, "folder");
   });
 
-  test("unknown foreign host copies the breadcrumb", () => {
+  test("an alias the hub did not reach over ssh is this machine's", () => {
     const target = rankFocus(
-      job({
-        alias: "otherbox",
-        location: { focusHint: "Codex · otherbox" },
-      }),
+      job({ alias: "otherbox", context: { workspace: "/Users/me/work/nerve" } }),
       local,
     );
-    assert.equal(target.kind, "copy");
-    if (target.kind === "copy") {
-      assert.equal(target.text, "Codex · otherbox");
-    }
+    assert.deepEqual(target, { kind: "here" });
   });
 
-  test("Open on alias is the foreign button title", () => {
-    assert.equal(
-      focusActionTitle(job({ alias: "arrhenius1" }), "macbook"),
-      "Open on arrhenius1",
-    );
-    assert.equal(focusActionTitle(job({ alias: "macbook" }), "macbook"), "Focus");
+  test("Open on the ssh Host is the foreign button title", () => {
+    assert.equal(focusActionTitle(job(onArrhenius)), "Open on Arrhenius");
+    assert.equal(focusActionTitle(job({ alias: "arrhenius1" })), "Focus");
   });
 
   test("a remote window on that machine is treated as local", () => {
     const target = rankFocus(
-      job({
-        alias: "arrhenius1",
-        context: { workspace: "/nobackup/proj" },
-      }),
+      job({ ...onArrhenius, context: { workspace: "/nobackup/proj" } }),
       {
         ...local,
         workspaceFolders: ["/nobackup/proj"],

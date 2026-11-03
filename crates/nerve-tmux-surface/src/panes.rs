@@ -20,7 +20,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 use crate::procs::{self, normalize_tty};
-use crate::ssh::{self, SshHosts};
+use crate::ssh;
 use crate::tmux::{self, SIDEBAR_ROLE};
 use nerve_surface_core::frame::JobView;
 use nerve_surface_core::jobpath::job_path;
@@ -118,9 +118,8 @@ impl<'a> PaneRow<'a> {
 struct PaneRank {
     /// The agent process runs on this pane's tty.
     tty: bool,
-    /// How well this pane's ssh session names the job's machine
-    /// ([`ssh::host_score`]).
-    host: u8,
+    /// This pane's ssh session reaches the job's machine ([`ssh::reaches`]).
+    host: bool,
     /// Filesystem overlap between the pane's cwd and the job's workspace.
     path: usize,
     /// tmux session named after the job.
@@ -146,17 +145,17 @@ pub(crate) enum JobTarget {
         tty: Option<String>,
     },
     /// The job runs on another machine: the closest thing here is the pane
-    /// holding an ssh session to it.
-    Remote { alias: String },
+    /// holding an ssh session to the `~/.ssh/config` Host that reached it.
+    Remote { host: String },
 }
 
 impl JobTarget {
     /// What to scan for, or `None` when the job says nothing this machine can
-    /// act on. `local` is this machine's alias ([`machine::local_alias`]).
-    pub(crate) fn of(job: &JobView, local: Option<&str>) -> Option<Self> {
-        if let Some(alias) = machine::foreign_alias(&job.alias, local) {
+    /// act on. The hub decides which machine it is ([`machine::ssh_host`]).
+    pub(crate) fn of(job: &JobView) -> Option<Self> {
+        if let Some(host) = machine::ssh_host(job) {
             return Some(Self::Remote {
-                alias: alias.to_string(),
+                host: host.to_string(),
             });
         }
         let workspace = job_path(job).map(|path| normalize_path(&path));
@@ -169,7 +168,7 @@ impl JobTarget {
 }
 
 pub(crate) fn find_pane_for_job(job: &JobView, sidebar: &SidebarPane) -> Option<String> {
-    let target = JobTarget::of(job, machine::local_alias())?;
+    let target = JobTarget::of(job)?;
     find_pane_for_target(&target, job, sidebar)
 }
 
@@ -188,27 +187,17 @@ pub(crate) fn find_pane_for_target(
             workspace.as_deref(),
             tty.as_deref(),
         ),
-        JobTarget::Remote { alias } => select_ssh_route(
-            panes.as_str(),
-            sidebar,
-            alias,
-            SshHosts::load(),
-            &ssh::destination_on_tty,
-        )
-        .map(|route| route.pane),
+        JobTarget::Remote { host } => {
+            select_ssh_route(panes.as_str(), sidebar, host, &ssh::destination_on_tty)
+                .map(|route| route.pane)
+        }
     }
 }
 
 /// The ssh route for a job on another machine, pane and host together.
-pub(crate) fn find_ssh_route(alias: &str, sidebar: &SidebarPane) -> Option<SshRoute> {
+pub(crate) fn find_ssh_route(host: &str, sidebar: &SidebarPane) -> Option<SshRoute> {
     let panes = tmux::run_tmux(&["list-panes", "-a", "-F", LIST_PANES_FORMAT])?;
-    select_ssh_route(
-        &panes,
-        sidebar,
-        alias,
-        SshHosts::load(),
-        &ssh::destination_on_tty,
-    )
+    select_ssh_route(&panes, sidebar, host, &ssh::destination_on_tty)
 }
 
 /// Best pane among `panes` ([`LIST_PANES_FORMAT`] rows, one per line) for a job
@@ -238,7 +227,7 @@ fn select_local_pane(
     })
 }
 
-/// The pane holding an ssh session to `alias`, and the host it reaches.
+/// The pane holding an ssh session to `host`, and the destination it typed.
 ///
 /// Both halves are needed: the pane is where `Enter` lands the human, and the
 /// destination is what [`crate::remote`] then talks to.
@@ -251,7 +240,7 @@ pub struct SshRoute {
     pub window: String,
 }
 
-/// Best pane holding an ssh session to `alias`.
+/// Best pane holding an ssh session to the Host `host`.
 ///
 /// `destination` is injected so the scan is testable without a process table:
 /// in the binary it is [`ssh::destination_on_tty`], one `ps` per pane that is
@@ -259,8 +248,7 @@ pub struct SshRoute {
 fn select_ssh_route(
     panes: &str,
     sidebar: &SidebarPane,
-    alias: &str,
-    hosts: &SshHosts,
+    host: &str,
     destination: &dyn Fn(&str) -> Option<String>,
 ) -> Option<SshRoute> {
     let mut best: Option<(PaneRank, SshRoute)> = None;
@@ -277,11 +265,11 @@ fn select_ssh_route(
         let Some(reaches) = destination(pane.tty) else {
             continue;
         };
-        let Some(host) = ssh::host_score(&reaches, alias, hosts) else {
+        if !ssh::reaches(&reaches, host) {
             continue;
-        };
+        }
         let rank = PaneRank {
-            host,
+            host: true,
             ..locality(&pane, sidebar)
         };
         if best.as_ref().is_none_or(|(prev, _)| rank > *prev) {
@@ -413,10 +401,9 @@ mod tests {
             tty.map(normalize_tty).as_deref(),
         )
     }
-    /// The pane `arrhenius1` routes to in this scan, if any.
+    /// The pane the Host `Arrhenius` routes to in this scan, if any.
     fn route_pane(panes: &str, seen: &dyn Fn(&str) -> Option<String>) -> Option<String> {
-        select_ssh_route(panes, &sidebar(), "arrhenius1", &SshHosts::default(), seen)
-            .map(|route| route.pane)
+        select_ssh_route(panes, &sidebar(), "Arrhenius", seen).map(|route| route.pane)
     }
     fn destinations(
         pairs: &'static [(&'static str, &'static str)],
@@ -546,30 +533,23 @@ mod tests {
         assert_eq!(route_pane(&panes, &seen), None);
     }
     #[test]
-    fn an_exact_host_outranks_a_prefix_of_it() {
+    fn a_login_node_typed_by_name_is_not_the_host() {
         let panes = [
             ssh_row("%4", "ttys006", "other", "@4"),
             ssh_row("%7", "ttys010", "other", "@5"),
         ]
         .join("\n");
         let seen = destinations(&[
-            ("/dev/ttys006", "Arrhenius"),
+            ("/dev/ttys006", "arrhenius"),
             ("/dev/ttys010", "arrhenius1"),
         ]);
-        assert_eq!(route_pane(&panes, &seen), Some("%7".to_string()));
+        assert_eq!(route_pane(&panes, &seen), Some("%4".to_string()));
     }
     #[test]
     fn the_route_carries_the_host_enter_has_to_talk_to() {
         let panes = ssh_row("%4", "ttys006", "other", "@4");
         let seen = destinations(&[("/dev/ttys006", "Arrhenius")]);
-        let route = select_ssh_route(
-            &panes,
-            &sidebar(),
-            "arrhenius1",
-            &SshHosts::default(),
-            &seen,
-        )
-        .expect("route");
+        let route = select_ssh_route(&panes, &sidebar(), "Arrhenius", &seen).expect("route");
         assert_eq!(route.pane, "%4");
         // The pane alone is not enough: `Enter` has to address the far side
         // exactly as the human's config spells it (`ssh::parse_destination`
@@ -599,16 +579,24 @@ mod tests {
             "id": "claude-code:s1",
             "alias": "arrhenius1",
             "name": "molcrafts",
-            "extensions": { "pid": std::process::id() },
+            "extensions": { "pid": std::process::id(), "sshHost": "Arrhenius" },
             "context": { "workspace": "/tmp" }
         }))
         .expect("job fixture");
-        let JobTarget::Remote { alias } =
-            JobTarget::of(&job, Some("RoydeMacBook-Air")).expect("target")
-        else {
+        let JobTarget::Remote { host } = JobTarget::of(&job).expect("target") else {
             panic!("a job on another machine must never be matched locally");
         };
-        assert_eq!(alias, "arrhenius1");
+        assert_eq!(host, "Arrhenius");
+    }
+    #[test]
+    fn a_job_the_hub_did_not_reach_over_ssh_is_local_whatever_its_alias() {
+        let job: JobView = serde_json::from_value(serde_json::json!({
+            "id": "claude-code:s1",
+            "alias": "some-old-name",
+            "context": { "workspace": "/tmp" }
+        }))
+        .expect("job fixture");
+        assert!(matches!(JobTarget::of(&job), Some(JobTarget::Local { .. })));
     }
     #[test]
     fn tty_spellings_normalise_to_one() {

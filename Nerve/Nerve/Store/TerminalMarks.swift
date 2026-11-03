@@ -3,7 +3,8 @@ import Foundation
 /// One terminal's status, for a host that draws a dot beside that terminal.
 /// The hub chose it (`tabIndicators`); this only gives it the ribbon's colour.
 public struct TerminalMark: Sendable, Equatable {
-    /// Kernel hostname, lowercased by the hub.
+    /// The machine, as the hub names it: the `~/.ssh/config` Host that
+    /// reached a remote one, and this Mac's Bonjour name (`<name>.local`).
     public let host: String
     /// `/dev/ttysN`, `/dev/pts/N`: the agent's controlling tty, which in
     /// tmux is the pane's.

@@ -177,7 +177,7 @@ export const docPages: DocPage[] = [
       },
       {
         type: 'p',
-        text: 'With a Tether build supporting the tabIndicator plugin contribution, task state also appears as a colored circle before the matching tab name. Matching uses the kernel hostname (the same string the hook reports) and the controlling TTY, so renaming a tab has no effect. A new tab picks the mark up on the next hub frame without being selected. Update the hub, hooks and installed web package together; the next hook event supplies the identity. The hub selects one state per terminal. A split tab shows its focused terminal; loss of the hub connection clears the marks.',
+        text: 'With a Tether build supporting the tabIndicator plugin contribution, task state also appears as a colored circle before the matching tab name. Matching uses the machine and the controlling TTY, so renaming a tab has no effect. The hub names the machine: this Mac by its Bonjour name (LocalHostName.local, which does not change with the network), a remote one by the ~/.ssh/config Host that reached it — the same Host a Tether tab was opened with. A new tab picks the mark up on the next hub frame without being selected. Update the hub, hooks and installed web package together; the next hook event supplies the identity. The hub selects one state per terminal. A split tab shows its focused terminal; loss of the hub connection clears the marks.',
       },
       {
         type: 'p',
@@ -373,7 +373,7 @@ cargo test -p nerve-hub hook`,
       { type: 'h2', text: 'A remote job in the panel' },
       {
         type: 'p',
-        text: 'A job reported by another machine keeps that machine’s alias, and its workspace path belongs to that machine — so nothing here tries to open it locally. The panel’s primary action says where it goes (“Open on arrhenius1”) and opens an ssh session to that machine instead, through whatever you have registered for ssh: URLs (Terminal by default). The Host comes from your own ~/.ssh/config, matched against the alias by name, so ssh Arrhenius reaches a machine that calls itself arrhenius1. IDE deep links (cursor://, vscode://) are still opened as they are — those route to their own remote. With no matching Host, Nerve copies the location rather than pretend it opened something.',
+        text: 'A job reported by another machine keeps that machine’s alias, and its workspace path belongs to that machine — so nothing here tries to open it locally. The panel’s primary action says where it goes (“Connect to Arrhenius”) and opens an ssh session to that machine instead, through whatever you have registered for ssh: URLs (Terminal by default). The Host is the ~/.ssh/config stanza the hub reached that machine through, so it is also the way back — nothing is guessed from the name the machine calls itself. IDE deep links (cursor://, vscode://) are still opened as they are — those route to their own remote. Inside Tether, a tab already open on that Host is chosen first.',
       },
       {
         type: 'p',
@@ -480,7 +480,7 @@ run-shell ~/.tmux/plugins/nerve/surfaces/tmux/nerve.tmux`,
       },
       {
         type: 'p',
-        text: 'A job reported by another machine has no pane on this one, so it is matched by the session you are watching it through: the pane running ssh to that host. Enter jumps there — the honest local answer to “take me back to that agent”. The host is matched against the machine alias the producer reported, through your ~/.ssh/config when the Host you typed is spelled differently (ssh Arrhenius → arrhenius1).',
+        text: 'A job reported by another machine has no pane on this one, so it is matched by the session you are watching it through: the pane running ssh to that host. Enter jumps there — the honest local answer to “take me back to that agent”. The pane is the one whose ssh was pointed at the ~/.ssh/config Host the hub reached the job through (ssh Arrhenius for a job on Arrhenius), compared by that name alone: a login node typed by its own name (ssh arrhenius1) is another destination.',
       },
       {
         type: 'p',
@@ -572,7 +572,7 @@ npm run watch`,
       { type: 'h2', text: 'Focus' },
       {
         type: 'p',
-        text: 'A job on this machine is matched by extensions.pid against a VS Code terminal, then by workspace path. A hit on the current folder is “already here”: the row is highlighted, the extension does not pretend it can select a Claude Code chat session. A job on another machine never compares its pid or file:// path locally. The button reads Open on <alias> and opens a vscode-remote window when ~/.ssh/config can name that host; otherwise the breadcrumb is copied.',
+        text: 'A job on this machine is matched by extensions.pid against a VS Code terminal, then by workspace path. A hit on the current folder is “already here”: the row is highlighted, the extension does not pretend it can select a Claude Code chat session. A job on another machine never compares its pid or file:// path locally. The button reads Open on <Host> — the ~/.ssh/config Host the hub reached that machine through — and opens a vscode-remote window on it; a window already open on that Host treats the job as its own.',
       },
       {
         type: 'callout',
@@ -587,7 +587,7 @@ npm run watch`,
           ['Nerve · offline', 'Hub not reachable — it retries. The editor is not blocked.'],
           ['Nerve: no jobs', 'Hub is up but nothing is reporting'],
           ['No jobs in this folder', 'This Folder filter is on; All still has rows'],
-          ['Open on arrhenius1', 'That job is not on this machine. It will not open a local folder.'],
+          ['Open on Arrhenius', 'That job is not on this machine. It will not open a local folder.'],
         ],
       },
       {
@@ -1112,7 +1112,7 @@ const zhMachinesPage: DocPage = {
     { type: 'h2', text: '面板里的远程任务' },
     {
       type: 'p',
-      text: '来自另一台机器的任务会保留那台机器的 alias，它的工作区路径也属于那台机器——所以这里不会去本地打开它。面板的主操作会写明去向（“Open on arrhenius1”），改为打开一个到那台机器的 ssh 会话，交给你为 ssh: 注册的应用（默认是终端）。Host 取自你自己的 ~/.ssh/config，按名字与 alias 匹配，所以 ssh Arrhenius 能连到自称 arrhenius1 的机器。IDE 深链（cursor://、vscode://）仍按原样打开——它们自己会路由到各自的远程。如果配置里没有匹配的 Host，Nerve 会复制位置，而不是假装打开了什么。',
+      text: '来自另一台机器的任务会保留那台机器的 alias，它的工作区路径也属于那台机器——所以这里不会去本地打开它。面板的主操作会写明去向（“Connect to Arrhenius”），改为打开一个到那台机器的 ssh 会话，交给你为 ssh: 注册的应用（默认是终端）。Host 就是 hub 连到那台机器时用的 ~/.ssh/config stanza，所以它也是回去的路——不按机器给自己起的名字去猜。IDE 深链（cursor://、vscode://）仍按原样打开——它们自己会路由到各自的远程。在 Tether 里，已经打开在那个 Host 上的 tab 优先。',
     },
     {
       type: 'p',
@@ -1289,7 +1289,7 @@ npm run watch`,
     { type: 'h2', text: 'Focus' },
     {
       type: 'p',
-      text: '本机任务先用 extensions.pid 匹配 VS Code terminal，再用工作区路径。命中当前文件夹就是「已经在这里」：高亮该行，扩展不假装能选中某条 Claude Code 会话。外机任务的 pid 和 file:// 路径永不拿来和本机比。按钮文案是 Open on <alias>，能从 ~/.ssh/config 叫出 Host 时打开 vscode-remote 窗口，否则复制面包屑。',
+      text: '本机任务先用 extensions.pid 匹配 VS Code terminal，再用工作区路径。命中当前文件夹就是「已经在这里」：高亮该行，扩展不假装能选中某条 Claude Code 会话。外机任务的 pid 和 file:// 路径永不拿来和本机比。按钮文案是 Open on <Host>——hub 连到那台机器时用的 ~/.ssh/config Host——并在它上面打开 vscode-remote 窗口；已经打开在这个 Host 上的窗口把任务当作自己的。',
     },
     {
       type: 'callout',
@@ -1304,7 +1304,7 @@ npm run watch`,
         ['Nerve · offline', 'Hub 不可达——它会重试。编辑器不会被挡住。'],
         ['Nerve: no jobs', 'Hub 在，但没有 producer 在报'],
         ['No jobs in this folder', '开了 This Folder 过滤；All 里还有行'],
-        ['Open on arrhenius1', '该任务不在这台机器上。它不会打开本地文件夹。'],
+        ['Open on Arrhenius', '该任务不在这台机器上。它不会打开本地文件夹。'],
       ],
     },
     {
@@ -1678,7 +1678,7 @@ const zhDocPages: DocPage[] = [
       },
       {
         type: 'p',
-        text: '使用支持 tabIndicator 插件贡献的 Tether 版本时，任务状态还会显示为对应 tab 名称前的彩色圆点。关联依据实际机器 hostname 和控制 TTY，重命名 tab 不影响关联。需要同步更新 hub、钩子和已安装的 Web 插件；下一条钩子事件会提供终端身份。hub 为每个终端选择一个状态；分屏 tab 显示当前聚焦终端的状态，与 hub 断开后清除标志。',
+        text: '使用支持 tabIndicator 插件贡献的 Tether 版本时，任务状态还会显示为对应 tab 名称前的彩色圆点。关联依据机器和控制 TTY，重命名 tab 不影响关联。机器由 hub 命名：本机用 Bonjour 名（LocalHostName.local，不随网络变化），远端用连到它的 ~/.ssh/config Host——也就是 Tether tab 打开时用的那个 Host。需要同步更新 hub、钩子和已安装的 Web 插件；下一条钩子事件会提供终端身份。hub 为每个终端选择一个状态；分屏 tab 显示当前聚焦终端的状态，与 hub 断开后清除标志。',
       },
       {
         type: 'p',

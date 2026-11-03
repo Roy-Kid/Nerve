@@ -1,27 +1,20 @@
 import { strict as assert } from "node:assert";
-import { foreignAlias, sameAlias, sanitizeAlias } from "../../src/model/machine";
+import { parseJob, type Job } from "../../src/model/job";
+import { sshHost } from "../../src/model/machine";
 
-suite("machine alias", () => {
-  test("same alias is case-insensitive and stripped of punctuation", () => {
-    assert.equal(sameAlias("RoydeMacBook-Air", "roydemacbook-air"), true);
-    assert.equal(sameAlias(" arrhenius1 ", "arrhenius1"), true);
-    assert.equal(sameAlias("Roy's-Air", "Roys-Air"), true);
-    assert.equal(sameAlias("arrhenius1", "arrhenius2"), false);
+function job(value: Record<string, unknown>): Job {
+  const parsed = parseJob({ id: "a", ...value });
+  if (!parsed) throw new Error("parseJob rejected a test fixture");
+  return parsed;
+}
+
+suite("which machine", () => {
+  test("a job the hub reached over ssh names that Host", () => {
+    assert.equal(sshHost(job({ extensions: { sshHost: " Arrhenius " } })), "Arrhenius");
   });
 
-  test("foreignAlias is none when this machine has no name", () => {
-    assert.equal(foreignAlias("arrhenius1", undefined), undefined);
-  });
-
-  test("foreignAlias is none when the job is local", () => {
-    assert.equal(foreignAlias("box", "box"), undefined);
-  });
-
-  test("foreignAlias returns the job alias when it differs", () => {
-    assert.equal(foreignAlias("arrhenius1", "macbook"), "arrhenius1");
-  });
-
-  test("sanitize drops apostrophes", () => {
-    assert.equal(sanitizeAlias("Roy's-Air"), "Roys-Air");
+  test("every other job is the hub's own, whatever its alias", () => {
+    assert.equal(sshHost(job({ alias: "arrhenius1" })), undefined);
+    assert.equal(sshHost(job({ alias: "", extensions: { sshHost: "" } })), undefined);
   });
 });

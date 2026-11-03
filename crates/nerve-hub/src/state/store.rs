@@ -34,6 +34,9 @@ pub struct JobStore {
     clock: Arc<dyn Clock>,
     /// Alias for "this machine" — fills empty job aliases and gates the reaper.
     machine_alias: String,
+    /// This machine's terminal host (`MachineName`), stamped on every local
+    /// job's `extensions.terminal`. `None` keeps what the producer said.
+    machine_name: Option<String>,
     reaper: Reaper,
     jobs: BTreeMap<String, Job>,
     timelines: Timelines,
@@ -146,6 +149,7 @@ impl JobStore {
         Self {
             clock,
             machine_alias,
+            machine_name: None,
             reaper: Reaper::new(probe),
             jobs: BTreeMap::new(),
             timelines: Timelines::default(),
@@ -163,6 +167,13 @@ impl JobStore {
             remote_jobs: BTreeMap::new(),
             machines: BTreeMap::new(),
         }
+    }
+
+    /// Name this machine's terminals by `name` from now on.
+    #[must_use]
+    pub fn with_machine_name(mut self, name: Option<String>) -> Self {
+        self.machine_name = name;
+        self
     }
 
     /// The clock this store was assembled with.
@@ -690,6 +701,11 @@ impl JobStore {
                 job["machineId"] = Value::String(self.machine_id.clone());
                 job["originJobId"] = job["id"].clone();
                 job["display"]["machineLabel"] = serde_json::json!(self.machine_alias);
+                if let Some(name) = &self.machine_name
+                    && job["extensions"]["terminal"].is_object()
+                {
+                    job["extensions"]["terminal"]["host"] = serde_json::json!(name);
+                }
             }
         }
         rows

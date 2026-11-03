@@ -30,13 +30,8 @@ pub struct Outcome {
 ///
 /// The plan is chosen without touching the OS and executed without deciding
 /// anything, so the interesting half stays testable and this half stays dumb.
-pub fn perform(
-    job: &JobView,
-    local_alias: Option<&str>,
-    opener: &dyn ShellOpener,
-    clipboard: &mut dyn Clipboard,
-) -> Outcome {
-    match plan(job, local_alias) {
+pub fn perform(job: &JobView, opener: &dyn ShellOpener, clipboard: &mut dyn Clipboard) -> Outcome {
+    match plan(job) {
         OpenPlan::Shell(url) => navigation(opener.open_url(&url), "Nothing opened it"),
         OpenPlan::Reveal(path) => navigation(
             opener.open_path(std::path::Path::new(&path)),

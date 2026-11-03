@@ -247,6 +247,10 @@ pub struct JobExtensions {
     /// `false` keeps the row off the ribbon.
     #[serde(default)]
     pub paint_ribbon: Option<bool>,
+    /// The `~/.ssh/config` Host the hub reached this job's machine through.
+    /// Absent on the hub's own jobs ([`crate::machine::ssh_host`]).
+    #[serde(default)]
+    pub ssh_host: Option<String>,
 }
 
 /// Where a surface should send the human back to.

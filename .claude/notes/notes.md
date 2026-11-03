@@ -1,5 +1,33 @@
 # Notes
 
+<!-- mol:note:topic:terminal-host -->
+## 2026-11-03 — A terminal's machine has one name, and the hub gives it
+
+`extensions.terminal.host` is stamped by the hub, never taken from the hook:
+`local_jobs_json` writes this machine's `MachineName` (macOS
+`<LocalHostName>.local`, else the whole `hostname`, lowercased), and
+`apply_remote` writes the `~/.ssh/config` Host that reached a remote machine.
+`~/.ssh/config` is the single source: the stanza decides where `ssh` lands, so
+the hub and a Tether tab opened with the same stanza name the same machine.
+
+Why: hooks read `os.hostname()` on every event, and a Mac's kernel name follows
+its network (`roydeair.kemi.uu.se` on campus, `roydemacbook-air.local` at home).
+A Tether tab captured one spelling at connect; after a reconnect every new event
+named the other, and the tab lost its mark. A remote hub's own name for itself
+(`arrhenius1`) is not what a tab opened as `Arrhenius` says either.
+
+"Is this job remote" is `extensions.sshHost` — set only by federation — not an
+alias guess, in every surface: `nerve_surface_core::machine::ssh_host` (tmux,
+Windows), `RemoteMachine.sshHost` (macOS), `sshHost` in `vsc-ext`. A tmux ssh
+pane reaches a job's machine when its destination is that Host, by name alone;
+the old exact/label/prefix scoring and the `~/.ssh/config` HostName parsers are
+gone. Machine identity and the machine list live in `~/.nerve`
+(`machine-id`, `machines.json`); a hub moves them from `~/.config/nerve` once.
+
+Known gaps: a Host that load-balances login nodes can land the hub on another
+node than the tab, unless the config shares a ControlMaster; and on a shared
+`$HOME` every node reads the same `machine-id`.
+
 ## 2026-09-21 — Windows interaction and distribution hardening
 
 Tray/menu/toast events explicitly wake egui. Only left-button release toggles the flyout; focus dismissal waits for the new window to acquire focus. Alt+F4 hides, while the tray Quit action exits. Icon and tooltip caches are independent and only advance after successful shell updates. Copy fallbacks keep their explanation visible. Panel bounds persist, placement converts between physical pixels and egui points, and disconnected empty state no longer claims nothing is running.

@@ -140,81 +140,16 @@ enum LocalMachine {
 
 /// Which machine a job runs on, and how this Mac can reach it.
 ///
-/// Jobs carry whatever `alias` their producer reported, and a producer on
-/// another host reaches this hub through its RemoteForward tunnel — so a job in
-/// the panel is not necessarily a job on this Mac. Asking that question first is
-/// what keeps a remote workspace path from being opened locally; the same guard
-/// the tmux surface applies before it matches a pane
-/// (`crates/nerve-tmux-surface/src/machine.rs`) and the hub applies before it
-/// trusts a pid (`crates/nerve-hub/src/state/reaper.rs`).
+/// The hub says. A job it reached through `ssh <Host>` carries that Host as
+/// `extensions.sshHost` — a stanza of the same `~/.ssh/config` the Machines
+/// list is read from, so it is also how to get there. Every other job is this
+/// Mac's: a hook only ever posts to the hub on its own machine. Asking first
+/// is what keeps a remote workspace path from being opened locally.
 enum RemoteMachine {
-    /// Alias of the machine a job runs on, when that is not this one.
-    ///
-    /// `nil` means "treat it as local": the job named no machine, or it named
-    /// this one.
-    static func foreignAlias(of jobAlias: String, local: String = LocalMachine.alias) -> String? {
-        let alias = jobAlias.trimmingCharacters(in: .whitespacesAndNewlines)
-        if alias.isEmpty { return nil }
-        return sameMachine(alias, local) ? nil : alias
-    }
-
-    /// Whether two aliases name the same machine.
-    ///
-    /// Compared the way they are produced: case-insensitively, over the
-    /// characters an alias may contain. The hook posts the raw machine name and
-    /// the hub sanitises what it fills in, so one machine can be spelled two
-    /// ways on the wire.
-    static func sameMachine(_ left: String, _ right: String) -> Bool {
-        let l = MachineConfig.sanitizeAlias(left)
-        let r = MachineConfig.sanitizeAlias(right)
-        return !l.isEmpty && l.compare(r, options: .caseInsensitive) == .orderedSame
-    }
-
-    /// The ssh `Host` token that reaches `alias`, or `nil` when the user's
-    /// config has no way there.
-    ///
-    /// The two names come from different places and often disagree in shape: a
-    /// producer reports its hostname (`arrhenius1`) while the human's config
-    /// spells the Host its own way (`ssh Arrhenius` → `login.hpc.arrhenius…`).
-    /// Both the Host token and its `HostName` are scored, best wins, and ties
-    /// go to the first entry in the file.
-    static func bestHost(
-        for alias: String,
-        among hosts: [(alias: String, hostName: String)]
-    ) -> String? {
-        var best: (score: Int, host: String)?
-        for host in hosts {
-            let candidates = [score(host: host.alias, alias: alias),
-                              score(host: host.hostName, alias: alias)]
-            guard let score = candidates.compactMap({ $0 }).max() else { continue }
-            if best == nil || score > best!.score {
-                best = (score, host.alias)
-            }
-        }
-        return best?.host
-    }
-
-    /// How well one host name answers to `alias`: exact (3), first label (2),
-    /// shared prefix (1), unrelated (`nil`).
-    static func score(host: String, alias: String) -> Int? {
-        let host = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        let alias = alias.trimmingCharacters(in: .whitespacesAndNewlines)
-        if host.isEmpty || alias.isEmpty { return nil }
-        if host.compare(alias, options: .caseInsensitive) == .orderedSame { return 3 }
-        let label = String(host.split(separator: ".").first ?? "")
-        if label.compare(alias, options: .caseInsensitive) == .orderedSame { return 2 }
-        // `Arrhenius` is how a login node called `arrhenius1` is usually spelled.
-        return sharesPrefix(label, alias) ? 1 : nil
-    }
-
-    /// Shortest name that may be prefix-matched, so `a` cannot stand for a
-    /// whole machine.
-    private static let minimumPrefix = 3
-
-    private static func sharesPrefix(_ left: String, _ right: String) -> Bool {
-        let overlap = min(left.count, right.count)
-        guard overlap >= minimumPrefix else { return false }
-        return left.prefix(overlap).compare(right.prefix(overlap), options: .caseInsensitive)
-            == .orderedSame
+    /// The ssh `Host` that reached this job's machine, or `nil` for this Mac.
+    static func sshHost(of job: Job) -> String? {
+        guard case .string(let raw) = job.extensions["sshHost"] else { return nil }
+        let host = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return host.isEmpty ? nil : host
     }
 }

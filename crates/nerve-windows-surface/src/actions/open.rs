@@ -16,7 +16,7 @@ use nerve_surface_core::frame::JobView;
 use nerve_surface_core::jobpath::{
     is_ide_deep_link, path_from_focus_hint, workspace_path_from_url,
 };
-use nerve_surface_core::machine::foreign_alias;
+use nerve_surface_core::machine::ssh_host;
 
 /// What the surface should do when the human asks to be taken to a job.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,11 +32,10 @@ pub enum OpenPlan {
     None(&'static str),
 }
 
-/// Decide, given the job and which machine this is.
-///
-/// `local_alias` is passed in rather than read, so every row of the table
-/// below is a unit test and not a hostname.
-pub fn plan(job: &JobView, local_alias: Option<&str>) -> OpenPlan {
+/// Decide, given the job. Which machine it is on is the hub's word
+/// ([`ssh_host`]), so every row of the table below is a unit test and not a
+/// hostname.
+pub fn plan(job: &JobView) -> OpenPlan {
     let open_url = job
         .location
         .as_ref()
@@ -50,7 +49,7 @@ pub fn plan(job: &JobView, local_alias: Option<&str>) -> OpenPlan {
         .map(str::trim)
         .filter(|hint| !hint.is_empty());
 
-    if foreign_alias(&job.alias, local_alias).is_some() {
+    if ssh_host(job).is_some() {
         // An IDE deep link carries its own remote authority, so the editor
         // decides where it lands. Anything else is a path here that means
         // something there.

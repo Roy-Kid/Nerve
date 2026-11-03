@@ -72,3 +72,53 @@ impl LocalAlias {
             .collect()
     }
 }
+
+/// What `extensions.terminal.host` says for a job on *this* machine.
+///
+/// The hub stamps it; the hook's own `gethostname` is not used, because a
+/// Mac's kernel name follows whatever network it is on. macOS answers with
+/// its Bonjour name (`<LocalHostName>.local`), which does not move; anything
+/// else with its whole `hostname`, so login nodes `arrhenius1` and
+/// `arrhenius2` stay two machines. Lowercase, as every terminal host is.
+pub struct MachineName;
+
+impl MachineName {
+    /// Ask the OS once. `None` leaves each job with what its producer said.
+    pub fn resolve() -> Option<String> {
+        Self::bonjour()
+            .or_else(|| LocalAlias::first_line(&mut Command::new("hostname")))
+            .map(|name| Self::normalize(&name))
+            .filter(|name| !name.is_empty() && !name.contains(char::is_whitespace))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn bonjour() -> Option<String> {
+        LocalAlias::bonjour_local_host_name().map(|name| format!("{name}.local"))
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn bonjour() -> Option<String> {
+        None
+    }
+
+    fn normalize(raw: &str) -> String {
+        raw.trim().to_lowercase()
+    }
+}
+
+#[cfg(test)]
+mod machine_name_tests {
+    use super::MachineName;
+
+    #[test]
+    fn a_name_is_lowercase_and_whole() {
+        assert_eq!(
+            MachineName::normalize(" RoydeMacBook-Air.local\n"),
+            "roydemacbook-air.local"
+        );
+        assert_eq!(
+            MachineName::normalize("arrhenius1.kemi.uu.se"),
+            "arrhenius1.kemi.uu.se"
+        );
+    }
+}

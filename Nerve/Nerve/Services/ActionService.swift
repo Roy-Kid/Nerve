@@ -1,35 +1,6 @@
 import Foundation
 import AppKit
 
-/// Names this Mac answers to. Hooks report `gethostname`; Bonjour is `*.local`.
-enum LocalMachineNames {
-    static var kernel: String {
-        var bytes = [CChar](repeating: 0, count: 256)
-        guard gethostname(&bytes, bytes.count) == 0 else {
-            return ProcessInfo.processInfo.hostName.lowercased()
-        }
-        let units = bytes.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
-        let name = String(decoding: units, as: UTF8.self).lowercased()
-        return name.isEmpty ? ProcessInfo.processInfo.hostName.lowercased() : name
-    }
-
-    static func same(_ reported: String) -> Bool {
-        let host = reported.lowercased()
-        guard !host.isEmpty else { return false }
-        var names: Set<String> = []
-        func add(_ raw: String) {
-            let value = raw.lowercased()
-            guard !value.isEmpty else { return }
-            names.insert(value)
-            if let short = value.split(separator: ".").first { names.insert(String(short)) }
-            if value.hasSuffix(".local") { names.insert(String(value.dropLast(".local".count))) }
-        }
-        add(kernel)
-        add(ProcessInfo.processInfo.hostName)
-        return names.contains(host)
-    }
-}
-
 enum ActionResult: Sendable {
     case succeeded(String)
     case failed(String)
@@ -124,11 +95,10 @@ enum ActionService {
     /// terminal *there*, which is a bigger thing than revealing a folder here
     /// and must not be labelled the same way.
     static func focusActionTitle(for subject: Job) -> String {
-        if let alias = RemoteMachine.foreignAlias(of: subject.alias) {
-            if ideDeepLink(subject) != nil { return "Open on \(alias)" }
-            return remoteSSHHost(for: subject) != nil ? "Connect to \(alias)" : "Copy location"
+        if let host = RemoteMachine.sshHost(of: subject) {
+            return ideDeepLink(subject) != nil ? "Open on \(host)" : "Connect to \(host)"
         }
-        if let target = terminalTarget(of: subject), LocalMachineNames.same(target.host) {
+        if terminalTarget(of: subject) != nil {
             return "Show terminal"
         }
         if let url = subject.location?.openURL, !url.isEmpty {
@@ -204,8 +174,11 @@ enum ActionService {
     /// The same fields the web panel sends to `host.focus`.
     static func focusRequest(of subject: Job) -> PanelFocusBridge.Request {
         let terminal = terminalTarget(of: subject)
-        let directory = subject.context?.workspace?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let url = subject.location?.openURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Another machine's folder and file URL name its filesystem, not this
+        // one's: only its terminal can be matched here.
+        let remote = RemoteMachine.sshHost(of: subject) != nil
+        let directory = remote ? nil : subject.context?.workspace?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = remote ? nil : subject.location?.openURL?.trimmingCharacters(in: .whitespacesAndNewlines)
         return PanelFocusBridge.Request(
             host: terminal?.host,
             terminal: terminal?.device,
@@ -216,26 +189,28 @@ enum ActionService {
 
     /// Open workspace / IDE deep link, else copy focus breadcrumb for the user.
     ///
-    /// A job on another machine is answered by [`openRemote`] instead: its
-    /// `openURL` names that machine's filesystem, and opening it here would at
-    /// best fail and at worst open an unrelated local folder of the same name.
+    /// A host that set ``PanelFocusBridge/land`` answers the click itself,
+    /// a remote job's terminal included: the host may have a tab open on that
+    /// ssh Host. A file URL is the workspace the agent is running in, and
+    /// opening it launches Finder.
     ///
-    /// A host that set ``PanelFocusBridge/land`` answers the click itself.
-    /// A file URL is the workspace the agent is running in, and opening it
-    /// launches Finder.
+    /// A job on another machine that the host did not land is answered by
+    /// [`openRemote`]: its `openURL` names that machine's filesystem, and
+    /// opening it here would at best fail and at worst open an unrelated local
+    /// folder of the same name.
     @MainActor
     static func openLocation(_ subject: Job) -> ActionResult {
-        if let alias = RemoteMachine.foreignAlias(of: subject.alias) {
-            return openRemote(subject, alias: alias)
-        }
+        let sshHost = RemoteMachine.sshHost(of: subject)
         if let land = PanelFocusBridge.land {
-            return land(focusRequest(of: subject))
-                ? .succeeded("") : .failed("No matching terminal or workspace")
+            if land(focusRequest(of: subject)) { return .succeeded("") }
+            if sshHost == nil { return .failed("No matching terminal or workspace") }
+        }
+        if let sshHost {
+            return openRemote(subject, sshHost: sshHost)
         }
         // Same landing as the Tether panel: the named tty, then an editor link,
         // then a folder. A file URL is not the window the agent is running in.
         if let target = terminalTarget(of: subject),
-           LocalMachineNames.same(target.host),
            let source = terminalScript(device: target.device) {
             var error: NSDictionary?
             let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
@@ -281,20 +256,20 @@ enum ActionService {
     /// the breadcrumb is copied instead. A remote path is never handed to
     /// NSWorkspace — display only means honest, not eager.
     @MainActor
-    private static func openRemote(_ subject: Job, alias: String) -> ActionResult {
-        if let url = ideDeepLink(subject), NSWorkspace.shared.open(url) {
+    private static func openRemote(_ subject: Job, sshHost host: String) -> ActionResult {
+        if let url = ideDeepLink(subject), openURL(url) {
             return .succeeded("Opened")
         }
-        if let host = remoteSSHHost(for: subject) {
-            guard let url = URL(string: "ssh://\(host)") else {
-                return .failed("Could not address ssh host \(host)")
-            }
-            // Whatever the user registered for `ssh:` — Terminal by default.
-            if NSWorkspace.shared.open(url) { return .succeeded("Opened ssh \(host)") }
-            return .failed("No app to open ssh \(host)")
+        guard let url = URL(string: "ssh://\(host)") else {
+            return copyFocusBreadcrumb(subject, fallback: "Could not address ssh host \(host)")
         }
-        return copyFocusBreadcrumb(subject, fallback: "\(alias) — no ssh host in ~/.ssh/config")
+        // Whatever the user registered for `ssh:` — Terminal by default.
+        if openURL(url) { return .succeeded("Opened ssh \(host)") }
+        return .failed("No app to open ssh \(host)")
     }
+
+    /// How a URL leaves this app. Tests replace it so nothing is launched.
+    @MainActor static var openURL: (URL) -> Bool = { NSWorkspace.shared.open($0) }
 
     /// AppleScript that selects the Terminal.app tab whose tty is `device`.
     /// Anything that is not a bare tty path is refused: the string is interpolated.
@@ -331,13 +306,6 @@ enum ActionService {
               scheme != "file"
         else { return nil }
         return url
-    }
-
-    /// ssh `Host` that reaches `alias`, from the user's own config — the same
-    /// file Settings sources its Machines list from (CLAUDE.md invariant 5).
-    private static func remoteSSHHost(for subject: Job) -> String? {
-        guard case .string(let host) = subject.extensions["sshHost"] else { return nil }
-        return host
     }
 
     /// Last resort: hand the human the breadcrumb so they can get there

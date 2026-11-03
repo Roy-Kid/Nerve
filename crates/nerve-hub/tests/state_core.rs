@@ -385,6 +385,32 @@ fn test_a_new_prompt_replaces_the_kept_one() {
 }
 
 #[test]
+fn test_this_machine_names_its_terminals_whatever_the_hook_saw() {
+    let mut fixture = fixture();
+    fixture.store = fixture
+        .store
+        .with_machine_name(Some("roydemacbook-air.local".into()));
+    // The kernel name a hook read on a university network, then at home.
+    for (version, seen) in [(1, "roydeair.kemi.uu.se"), (2, "roydemacbook-air.local")] {
+        fixture.store.apply_snapshot(vec![job_fixture(
+            "claude-code:s1",
+            json!({ "version": version, "extensions": {
+                "terminal": {"host": seen, "terminal": "/dev/ttys003"} } }),
+        )]);
+        let jobs = fixture.store.jobs_json();
+        let stored = job_in(&jobs, "claude-code:s1");
+        assert_eq!(
+            text(&stored, "/extensions/terminal/host"),
+            "roydemacbook-air.local"
+        );
+        assert_eq!(
+            nerve_hub::projection::tab_indicators(&jobs)[0]["target"],
+            json!({"host":"roydemacbook-air.local","terminal":"/dev/ttys003"})
+        );
+    }
+}
+
+#[test]
 fn test_terminal_identity_stays_when_a_later_snapshot_omits_it() {
     let mut fixture = fixture();
     let terminal = json!({"host":"studio","terminal":"/dev/ttys003"});
