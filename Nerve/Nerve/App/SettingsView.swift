@@ -624,6 +624,7 @@ struct PreferencesView: View {
                 }
 
                 Section {
+                    NotificationToggle(title: "Turn complete", systemImage: "text.bubble", isOn: $settings.notifyTurnComplete)
                     NotificationToggle(title: "Your turn", systemImage: "hand.raised", isOn: $settings.notifyRequired)
                     NotificationToggle(title: "Urgent ask", systemImage: "bell", isOn: $settings.notifyUrgent)
                     NotificationToggle(title: "Failures", systemImage: "xmark.circle", isOn: $settings.notifyFailure)
@@ -632,7 +633,7 @@ struct PreferencesView: View {
                 } header: {
                     Text("Events")
                 } footer: {
-                    Text("Your turn gently reminds when an agent needs input, review, or a decision (Ask reasons at suggested+). System waits only colour the ribbon — they do not interrupt. Suggested Ask stays silent even when Play sounds is on. Failures cover outcome.failure and tool/turn failures. Never free-text.")
+                    Text("Turn complete fires the moment an agent finishes a turn and waits at its prompt. Your turn gently reminds when an agent needs input, review, or a decision (Ask reasons at suggested+). System waits only colour the ribbon — they do not interrupt. Suggested Ask stays silent even when Play sounds is on. Failures cover outcome.failure and tool/turn failures. Never free-text.")
                 }
 
                 Section {

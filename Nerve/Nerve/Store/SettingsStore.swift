@@ -212,6 +212,8 @@ public final class SettingsStore {
     var notifyFailure: Bool { didSet { pushNotificationSettings() } }
     var notifyUnresponsive: Bool { didSet { pushNotificationSettings() } }
     var notifyLongSuccess: Bool { didSet { pushNotificationSettings() } }
+    /// An agent finished a turn and is waiting at its prompt.
+    var notifyTurnComplete: Bool { didSet { pushNotificationSettings() } }
     var notificationSoundEnabled: Bool { didSet { pushNotificationSettings() } }
     var longTaskSuccessThresholdSeconds: TimeInterval { didSet { pushNotificationSettings() } }
     var mutedSourceIds: Set<String> { didSet { pushNotificationSettings() } }
@@ -407,6 +409,7 @@ public final class SettingsStore {
         notifyFailure = true
         notifyUnresponsive = true
         notifyLongSuccess = true
+        notifyTurnComplete = true
         notificationSoundEnabled = true
         longTaskSuccessThresholdSeconds = 300
         mutedSourceIds = []
@@ -459,6 +462,7 @@ public final class SettingsStore {
         notifyFailure = p.notifyFailure
         notifyUnresponsive = p.notifyUnresponsive
         notifyLongSuccess = p.notifyLongSuccess
+        notifyTurnComplete = p.notifyTurnComplete ?? true
         notificationSoundEnabled = p.notificationSoundEnabled
         longTaskSuccessThresholdSeconds = p.longTaskSuccessThresholdSeconds
         mutedSourceIds = Set(p.mutedSourceIds)
@@ -496,6 +500,7 @@ public final class SettingsStore {
         notifyFailure = p.notifyFailure
         notifyUnresponsive = p.notifyUnresponsive
         notifyLongSuccess = p.notifyLongSuccess
+        notifyTurnComplete = true
         notificationSoundEnabled = p.notificationSoundEnabled
         longTaskSuccessThresholdSeconds = p.longTaskSuccessThresholdSeconds
         mutedSourceIds = Set(p.mutedSourceIds)
@@ -622,6 +627,7 @@ public final class SettingsStore {
             notifyFailure: notifyFailure,
             notifyUnresponsive: notifyUnresponsive,
             notifyLongSuccess: notifyLongSuccess,
+            notifyTurnComplete: notifyTurnComplete,
             notificationSoundEnabled: notificationSoundEnabled,
             longTaskSuccessThresholdSeconds: longTaskSuccessThresholdSeconds,
             mutedSourceIds: Array(mutedSourceIds).sorted(),
@@ -669,6 +675,7 @@ public final class SettingsStore {
         var notifyFailure: Bool
         var notifyUnresponsive: Bool
         var notifyLongSuccess: Bool
+        var notifyTurnComplete: Bool?
         var notificationSoundEnabled: Bool
         var longTaskSuccessThresholdSeconds: TimeInterval
         var mutedSourceIds: [String]

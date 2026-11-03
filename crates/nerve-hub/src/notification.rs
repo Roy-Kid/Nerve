@@ -54,14 +54,27 @@ impl Notifications {
             let failure = job["outcome"] == "failure" || job["attention"]["reason"] == "failure";
             let unresponsive = job["health"] == "unresponsive";
             let success = job["lifecycle"] == "ended" && job["outcome"] == "success";
+            let turn_complete =
+                job["lifecycle"] == "active" && job["current"]["type"] == "completed";
             for (kind, rank) in [
                 ("ask", ask),
                 ("failure", if failure { 3 } else { 0 }),
                 ("unresponsive", if unresponsive { 3 } else { 0 }),
                 ("longSuccess", if success { 3 } else { 0 }),
+                ("turnComplete", if turn_complete { 3 } else { 0 }),
             ] {
                 let key = (id.to_owned(), kind.to_owned());
-                let fired = (id.to_owned(), kind.to_owned(), rank);
+                // Every turn ends the same way, so its start tells two apart:
+                // a quick next turn is not the one already announced.
+                let occurrence = if kind == "turnComplete" {
+                    format!(
+                        "{kind}@{}",
+                        job["current"]["startedAt"].as_str().unwrap_or("")
+                    )
+                } else {
+                    kind.to_owned()
+                };
+                let fired = (id.to_owned(), occurrence, rank);
                 let previous = self.previous.get(&key).copied().unwrap_or(0);
                 if rank < 2 || previous >= rank || self.fired.contains_key(&fired) {
                     next.insert(key, rank);
@@ -85,13 +98,15 @@ impl Notifications {
                         "failure" => format!("Failed: {name}"),
                         "unresponsive" => format!("Unresponsive: {name}"),
                         "longSuccess" => format!("Completed: {name}"),
+                        "turnComplete" => format!("Turn complete: {name}"),
                         _ => job["attention"]["title"]
                             .as_str()
                             .unwrap_or("Return to your agent")
                             .to_owned(),
                     };
                     events.push(json!({"id":format!("n-{}-{}",std::process::id(),self.sequence),"target":target,"connectionId":connection,"jobId":id,"kind":kind,"title":title,
-      "body":job["attention"]["summary"].as_str().or(job["current"]["summary"].as_str()).unwrap_or(""),"level":if kind=="ask" {job["attention"]["level"].clone()}else{json!("required")},"sound":sound}));
+      // The turn's own summary is "Turn complete", already the title.
+      "body":if kind=="turnComplete" {""} else {job["attention"]["summary"].as_str().or(job["current"]["summary"].as_str()).unwrap_or("")},"level":if kind=="ask" {job["attention"]["level"].clone()}else{json!("required")},"sound":sound}));
                 }
             }
         }

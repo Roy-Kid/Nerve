@@ -11,17 +11,24 @@ public final class AppModel {
     private let hubClient: HubClient
     private let hubProcessManager: HubProcessManager
     private var notifications: NotificationService?
+    /// Set by a host that posts notes itself (Tether). Banners go through it,
+    /// and the system notification center stays the host's.
+    private let hostNotify: (@MainActor (_ title: String, _ body: String) async -> Void)?
     private var coach: FirstRunCoachController?
     private var started = false
 
-    public init(surface: String = "macos") {
+    public init(
+        surface: String = "macos",
+        hostNotify: (@MainActor (_ title: String, _ body: String) async -> Void)? = nil
+    ) {
         let settings = SettingsStore()
         let store = JobStore()
         let tunnels = MachineTunnelManager()
         self.settings = settings
         self.store = store
         self.tunnels = tunnels
-        self.hubClient = HubClient(store: store, surface: surface)
+        self.hostNotify = hostNotify
+        self.hubClient = HubClient(store: store, surface: surface, hostDelivers: hostNotify != nil)
         self.hubProcessManager = HubProcessManager()
         store.settingsProvider = { [weak self] in
             self?.settings ?? SettingsStore()
@@ -50,21 +57,30 @@ public final class AppModel {
         guard !started else { return }
         started = true
 
-        let notifications = NotificationService(settings: settings)
+        let notifications = hostNotify == nil ? NotificationService(settings: settings) : nil
         self.notifications = notifications
-        notifications.onAuthorizationSettled = { [weak self] in
+        notifications?.onAuthorizationSettled = { [weak self] in
             Task { await self?.hubClient.configureNotifications() }
         }
-        notifications.onOpenJob = { [weak self] jobId in
+        notifications?.onOpenJob = { [weak self] jobId in
             self?.openJobFromNotification(jobId)
         }
         // Panel deep-link helper used when a banner is clicked.
-        notifications.onRevealPanel = { [weak self] in
+        notifications?.onRevealPanel = { [weak self] in
             self?.revealStatusPanelBestEffort()
         }
 
-        store.notificationSink = { [weak self] event in
-            self?.notifications?.deliver(event)
+        if let hostNotify {
+            store.notificationSink = { event in
+                Task { @MainActor in
+                    await hostNotify(event.title, event.body)
+                    NotificationService.report(event.id, delivered: true)
+                }
+            }
+        } else {
+            store.notificationSink = { [weak self] event in
+                self?.notifications?.deliver(event)
+            }
         }
 
         // SwiftUI observes the store and settings directly for MenuBarExtra updates.
@@ -90,6 +106,11 @@ public final class AppModel {
 
         tunnels.start()
 
+        // A host asks for permission itself, the first time it posts a note.
+        guard let notifications else {
+            presentCoachIfNeeded()
+            return
+        }
         notifications.onPermissionPromptFinished = { [weak self] in
             self?.presentCoachIfNeeded()
         }

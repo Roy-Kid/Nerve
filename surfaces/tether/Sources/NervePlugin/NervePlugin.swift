@@ -1,6 +1,7 @@
 import SwiftUI
 import TetherPluginKit
 #if os(macOS)
+import Observation
 import NerveMac
 #endif
 
@@ -38,12 +39,13 @@ public final class NervePlugin: TetherPlugin {
       #endif
     }
   }
-  public let metadata = PluginMetadata(
+  private static let about = PluginMetadata(
     id: "app.nerve.tether",
     name: "Nerve",
     symbol: "waveform.path.ecg",
     summary: "Agent status"
   )
+  public var metadata: PluginMetadata { Self.about }
   public var isStatusBarOnly: Bool { true }
   public var needsRemoteConnection: Bool { false }
   public var statusBarItem: PluginStatusBarItem? {
@@ -51,7 +53,12 @@ public final class NervePlugin: TetherPlugin {
   }
 
   #if os(macOS)
-  private let model = AppModel(surface: "tether")
+  /// The hub's notes are Tether's: Tether posts them, asks for permission,
+  /// and opens this plugin when one is tapped.
+  private let model = AppModel(surface: "tether") { title, body in
+    await PluginServices(pluginID: NervePlugin.about.id, pluginName: NervePlugin.about.name)
+      .notify(title: title, body: body)
+  }
   #endif
 
   public init() {}
@@ -76,6 +83,30 @@ public final class NervePlugin: TetherPlugin {
     model.start()
     #endif
   }
+
+  /// The host draws the dot in the tab icon's place, and only redraws when
+  /// told. Marks arrive after the hub connects, so the watch stays armed.
+  public func observeTabMarks(_ notify: @escaping @MainActor () -> Void) {
+    #if os(macOS)
+    armMarkWatch(notify)
+    #else
+    _ = notify
+    #endif
+  }
+
+  #if os(macOS)
+  private func armMarkWatch(_ notify: @escaping @MainActor () -> Void) {
+    withObservationTracking {
+      _ = model.terminalMarks
+    } onChange: { [weak self] in
+      Task { @MainActor in
+        guard let self else { return }
+        notify()
+        self.armMarkWatch(notify)
+      }
+    }
+  }
+  #endif
 
   public func deactivate() {
     #if os(macOS)

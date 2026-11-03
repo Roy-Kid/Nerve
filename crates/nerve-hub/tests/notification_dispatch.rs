@@ -148,3 +148,76 @@ fn tether_notifies_without_a_preference_put_and_loses_to_macos() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0]["target"], "mac");
 }
+
+fn turn(current: &str, started: &str) -> serde_json::Value {
+    json!([project_json(json!({
+        "id":"claude-code:t","name":"Tether","lifecycle":"active",
+        "current":{"type":current,"summary":"Turn complete","startedAt":started}
+    }))])
+}
+
+#[test]
+fn turn_complete_fires_once_per_turn_only_for_surfaces_that_ask() {
+    let roster = SurfaceRoster::new(ChangeSignal::new());
+    roster.set_policy(NotifyPolicy::All);
+    roster.configure_client(
+        "asks".into(),
+        serde_json::from_value(json!({"enabled":true,"turnComplete":true})).unwrap(),
+    );
+    roster.configure_client("older".into(), preferences(true));
+    let _asks = roster.subscribe_client("tether", "asks", true);
+    let _older = roster.subscribe_client("macos", "older", true);
+    let mut policy = Notifications::default();
+    let now = std::time::Instant::now();
+    let first = policy.evaluate_frame_at(
+        &turn("completed", "2026-01-01T00:00:00Z"),
+        &json!([]),
+        &roster,
+        now,
+    );
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0]["target"], "asks");
+    assert_eq!(first[0]["kind"], "turnComplete");
+    assert_eq!(first[0]["title"], "Turn complete: Tether");
+    assert_eq!(first[0]["body"], "");
+    assert!(
+        policy
+            .evaluate_frame_at(
+                &turn("completed", "2026-01-01T00:00:00Z"),
+                &json!([]),
+                &roster,
+                now
+            )
+            .is_empty()
+    );
+    // The next turn ends well inside the 120-second window and still counts.
+    policy.evaluate_frame_at(
+        &turn("tool", "2026-01-01T00:00:10Z"),
+        &json!([]),
+        &roster,
+        now,
+    );
+    let next = policy.evaluate_frame_at(
+        &turn("completed", "2026-01-01T00:00:20Z"),
+        &json!([]),
+        &roster,
+        now,
+    );
+    assert_eq!(next.len(), 1);
+}
+
+#[test]
+fn turn_complete_is_off_when_the_surface_turns_it_off() {
+    let roster = SurfaceRoster::new(ChangeSignal::new());
+    roster.configure_client(
+        "off".into(),
+        serde_json::from_value(json!({"enabled":true,"turnComplete":false})).unwrap(),
+    );
+    let _off = roster.subscribe_client("tether", "off", true);
+    let mut policy = Notifications::default();
+    assert!(
+        policy
+            .evaluate(&turn("completed", "2026-01-01T00:00:00Z"), &roster)
+            .is_empty()
+    );
+}

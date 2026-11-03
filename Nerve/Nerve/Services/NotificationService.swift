@@ -108,12 +108,17 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         content.userInfo = ["subjectId":event.jobId]
         content.threadIdentifier = event.jobId
         center.add(UNNotificationRequest(identifier:event.id,content:content,trigger:nil)) { error in
-            var request = URLRequest(url:URL(string:"http://127.0.0.1:17890/v1/notifications/result")!)
-            request.httpMethod = "POST"
-            request.setValue("application/json",forHTTPHeaderField:"Content-Type")
-            request.httpBody = try? JSONSerialization.data(withJSONObject:["id":event.id,"delivered":error == nil])
-            URLSession.shared.dataTask(with:request).resume()
+            Self.report(event.id, delivered: error == nil)
         }
+    }
+
+    /// Tell the hub how executing one of its notifications ended.
+    nonisolated static func report(_ id: String, delivered: Bool) {
+        var request = URLRequest(url:URL(string:"http://127.0.0.1:17890/v1/notifications/result")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json",forHTTPHeaderField:"Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject:["id":id,"delivered":delivered])
+        URLSession.shared.dataTask(with:request).resume()
     }
 
     nonisolated func userNotificationCenter(

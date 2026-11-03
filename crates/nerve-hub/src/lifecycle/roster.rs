@@ -169,6 +169,11 @@ impl SurfaceRoster {
                             return false;
                         }
                     }
+                    "turnComplete" => {
+                        if !p.turn_complete {
+                            return false;
+                        }
+                    }
                     "longSuccess" => {
                         if !p.long_success {
                             return false;
@@ -307,6 +312,9 @@ pub struct ClientPreferences {
     pub long_success: bool,
     #[serde(default = "success_threshold")]
     pub long_success_seconds: f64,
+    /// Off unless a surface asks: older surfaces never offered it.
+    #[serde(default)]
+    pub turn_complete: bool,
     #[serde(default = "yes")]
     pub ask: bool,
     #[serde(default)]

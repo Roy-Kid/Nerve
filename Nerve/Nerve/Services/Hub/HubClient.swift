@@ -27,6 +27,9 @@ final class HubClient {
     }
 
     private let surface: String
+    /// The host posts the notes and asks for permission itself, so this
+    /// process's own authorization says nothing about whether it can notify.
+    private let hostDelivers: Bool
     private let store: JobStore
     private let session: URLSession
     /// Short GETs/POSTs. The stream session's 1h request timeout must not
@@ -51,9 +54,10 @@ final class HubClient {
     private var lastStreamFrameAt: Date = .distantPast
     private var retryDelay: TimeInterval = HubClient.minRetryDelay
 
-    init(store: JobStore, surface: String = "macos") {
+    init(store: JobStore, surface: String = "macos", hostDelivers: Bool = false) {
         self.store = store
         self.surface = surface
+        self.hostDelivers = hostDelivers
 
         let configuration = URLSessionConfiguration.ephemeral
         // Keep-alives land every ~15s. A hung socket that still looks ESTABLISHED
@@ -84,8 +88,8 @@ final class HubClient {
     func configureNotifications() async {
         guard let settings = store.settingsProvider?() else { return }
         let authorization = await UNUserNotificationCenter.current().notificationSettings()
-        let canNotify = authorization.authorizationStatus == .authorized || authorization.authorizationStatus == .provisional
-        let enabled = canNotify && !settings.notificationsPaused && (settings.notifyRequired || settings.notifyUrgent || settings.notifyFailure || settings.notifyUnresponsive || settings.notifyLongSuccess)
+        let canNotify = hostDelivers || authorization.authorizationStatus == .authorized || authorization.authorizationStatus == .provisional
+        let enabled = canNotify && !settings.notificationsPaused && (settings.notifyRequired || settings.notifyUrgent || settings.notifyFailure || settings.notifyUnresponsive || settings.notifyLongSuccess || settings.notifyTurnComplete)
         let eligibility = "notification client enabled=\(enabled) auth=\(authorization.authorizationStatus.rawValue)"
         if eligibility != lastEligibilityLog {
             lastEligibilityLog = eligibility
@@ -95,7 +99,7 @@ final class HubClient {
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["enabled": enabled,
-            "failure":settings.notifyFailure,"unresponsive":settings.notifyUnresponsive,"longSuccess":settings.notifyLongSuccess,"longSuccessSeconds":settings.longTaskSuccessThresholdSeconds,"ask":settings.notifyRequired,"dndEnabled":settings.dndEnabled,"dndStart":settings.dndStartMinutes,"dndEnd":settings.dndEndMinutes,"utcOffsetMinutes":TimeZone.current.secondsFromGMT()/60,"urgent":settings.notifyUrgent,"sound":settings.notificationSoundEnabled,"mutedSources":Array(settings.mutedSourceIds).sorted(),"mutedProjects":Array(settings.mutedProjectIds).sorted()])
+            "failure":settings.notifyFailure,"unresponsive":settings.notifyUnresponsive,"longSuccess":settings.notifyLongSuccess,"turnComplete":settings.notifyTurnComplete,"longSuccessSeconds":settings.longTaskSuccessThresholdSeconds,"ask":settings.notifyRequired,"dndEnabled":settings.dndEnabled,"dndStart":settings.dndStartMinutes,"dndEnd":settings.dndEndMinutes,"utcOffsetMinutes":TimeZone.current.secondsFromGMT()/60,"urgent":settings.notifyUrgent,"sound":settings.notificationSoundEnabled,"mutedSources":Array(settings.mutedSourceIds).sorted(),"mutedProjects":Array(settings.mutedProjectIds).sorted()])
         _ = try? await shortSession.data(for: request)
     }
 
@@ -215,19 +219,12 @@ final class HubClient {
         _ bytes: URLSession.AsyncBytes,
         onEvent: @escaping @Sendable (String) async -> Void
     ) async throws {
-        var payload: [String] = []
-        for try await line in bytes.lines {
-            if line.isEmpty {
-                if !payload.isEmpty {
-                    let event = payload.joined(separator: "\n")
-                    payload.removeAll(keepingCapacity: true)
-                    await onEvent(event)
-                }
-                continue
-            }
-            if line.hasPrefix(":") { continue }
-            if let value = value(ofField: "data", in: line) {
-                payload.append(value)
+        // Not `bytes.lines`: it drops blank lines, and a blank line is what
+        // ends an event. Read that way, no event was ever handed on.
+        var decoder = SSEDecoder()
+        for try await byte in bytes {
+            if let event = decoder.feed(byte) {
+                await onEvent(event)
             }
         }
     }
@@ -315,16 +312,6 @@ final class HubClient {
         }
     }
 
-    /// The value of one SSE field line, or nil when the line names another field.
-    private nonisolated static func value(ofField field: String, in line: String) -> String? {
-        guard let colon = line.firstIndex(of: ":") else { return nil }
-        guard String(line[line.startIndex..<colon]) == field else { return nil }
-        var value = line[line.index(after: colon)...]
-        // A single leading space after the colon is framing, not content.
-        if value.hasPrefix(" ") { value = value.dropFirst() }
-        return String(value)
-    }
-
     // MARK: - Writes
 
     /// `PUT /v1/notify` — `single` (one owner) or `all` (every surface).
@@ -386,5 +373,47 @@ final class HubClient {
                 return "hub answered HTTP \(code) — is `nerve-hub serve` running?"
             }
         }
+    }
+}
+
+/// Event-stream framing over raw bytes: `data:` lines gather until a blank
+/// line ends the event. Comments and other fields are skipped.
+struct SSEDecoder {
+    private var line: [UInt8] = []
+    private var data: [String] = []
+
+    /// One byte in; the event it completes, if any.
+    mutating func feed(_ byte: UInt8) -> String? {
+        guard byte == UInt8(ascii: "\n") else {
+            line.append(byte)
+            return nil
+        }
+        if line.last == UInt8(ascii: "\r") { line.removeLast() }
+        let text = String(decoding: line, as: UTF8.self)
+        line.removeAll(keepingCapacity: true)
+        return take(text)
+    }
+
+    private mutating func take(_ line: String) -> String? {
+        if line.isEmpty {
+            guard !data.isEmpty else { return nil }
+            defer { data.removeAll(keepingCapacity: true) }
+            return data.joined(separator: "\n")
+        }
+        if line.hasPrefix(":") { return nil }
+        if let value = Self.value(ofField: "data", in: line) {
+            data.append(value)
+        }
+        return nil
+    }
+
+    /// The value of one SSE field line, or nil when the line names another field.
+    private static func value(ofField field: String, in line: String) -> String? {
+        guard let colon = line.firstIndex(of: ":") else { return nil }
+        guard String(line[line.startIndex..<colon]) == field else { return nil }
+        var value = line[line.index(after: colon)...]
+        // A single leading space after the colon is framing, not content.
+        if value.hasPrefix(" ") { value = value.dropFirst() }
+        return String(value)
     }
 }
