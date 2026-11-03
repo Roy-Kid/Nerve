@@ -1,21 +1,20 @@
-# The repo's checks, run where a laptop cannot run them.
-#
-# The commit tier already runs fmt, clippy and a Windows `cargo check` through
-# `.pre-commit-config.yaml`. What only CI can add is the tier that actually
-# *executes* the Windows arms: a green `cargo test` on macOS says nothing about
-# code the local target never compiles.
+# Every job is setup, then one `scripts/check.py --job <name>`: the commit hook
+# runs the same function for the job its host can run, so a job here already
+# ran before the push, or is one a Mac cannot run (Windows), which
+# `scripts/ship.py` waits for. `scripts/test_check.py` holds this file to that.
 name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, 'ci/**']
   pull_request:
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  unix:
+  macos:
     name: macOS
     runs-on: macos-26
     steps:
@@ -31,46 +30,18 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
-
-      - run: cargo fmt --check
-      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-      - run: cargo test --workspace
-
-      # The commit-tier Windows gate, so a bypassed hook cannot land a
-      # `cfg(windows)` arm that does not compile.
-      - name: cargo check (windows target)
-        run: >
-          cargo check -p nerve-platform -p nerve-hub -p nerve-surface-core -p nerve-windows-surface
-          --all-targets --all-features --target x86_64-pc-windows-msvc
-
-      - name: hook mapper tests
-        run: python3 sources/agents/tests/test_nerve_hook.py
-
-      - name: VS Code surface
-        working-directory: vsc-ext
-        run: npm ci && npm test
-
-      - name: Tether web surface
-        run: node --test surfaces/tether-web/tests/*.test.mjs
-
-      - name: Tether macOS plugin model
-        run: node --test testing/tether/model.test.cjs
-
+      - name: Check
+        run: python3 scripts/check.py --job macos
       - uses: actions/upload-artifact@v7
         with:
           name: nerve-tether-macos
           path: surfaces/tether/
           if-no-files-found: error
-
       - uses: actions/upload-artifact@v7
         with:
           name: nerve-tether-web
           path: surfaces/tether-web/package/
           if-no-files-found: error
-
-      - name: site
-        working-directory: index
-        run: npm ci && npm test && npm run build
 
   windows:
     name: Windows
@@ -81,36 +52,11 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2.9.2
-
-      # nerve-tmux-surface is unix-only by design (tmux has no Windows port),
-      # so the Windows job names the portable crates rather than `--workspace`.
-      - name: clippy
-        run: >
-          cargo clippy -p nerve-platform -p nerve-hub -p nerve-surface-core -p nerve-windows-surface
-          --all-targets --all-features -- -D warnings
-      - name: test
-        run: >
-          cargo test -p nerve-platform -p nerve-hub -p nerve-surface-core -p nerve-windows-surface
-          --all-features
-      - name: build the hub and the tray surface
-        run: cargo build --release -p nerve-hub -p nerve-windows-surface
-
-      - name: verify the Windows ingest loop
-        shell: powershell
-        run: ./scripts/nerve.ps1 -VerifyLoop -BinaryDirectory ./target/release
-
-      - name: test Windows installer helpers
-        shell: powershell
-        run: ./scripts/test-windows-install.ps1
-
-      - name: stage the Windows download
-        shell: powershell
-        run: |
-          New-Item -ItemType Directory -Force package/scripts, package/fixtures | Out-Null
-          Copy-Item target/release/nerve-hub.exe, target/release/nerve-windows-surface.exe package/
-          Copy-Item scripts/nerve.ps1 package/scripts/
-          Copy-Item fixtures/demo_snapshot.json package/fixtures/
-
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Check
+        run: python scripts/check.py --job windows
       - uses: actions/upload-artifact@v7
         with:
           name: nerve-windows-x64

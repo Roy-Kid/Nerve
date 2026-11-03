@@ -1,38 +1,22 @@
-# Commit-tier CI parity (mol:ship commit). Push/merge tiers run the full
-# suites (cargo test --workspace, npm test && npm run build, ./scripts/nerve.sh --verify-loop).
+# The commit runs the CI job its host can — `scripts/check.py`, the same
+# function `.github/workflows/ci.yml` calls — and a push to master waits for
+# every workflow to pass on the commit first (`scripts/ship.py`).
+#
+#   pre-commit install --hook-type pre-commit --hook-type pre-push
 repos:
   - repo: local
     hooks:
-      - id: cargo-fmt-check
-        name: cargo fmt --check
-        entry: cargo fmt --check
+      - id: check
+        name: scripts/check.py (the CI job for this host)
+        entry: python3 scripts/check.py
         language: system
-        files: '\.rs$'
         pass_filenames: false
-      - id: cargo-clippy
-        name: cargo clippy -D warnings
-        entry: cargo clippy --workspace --all-targets -- -D warnings
+        always_run: true
+        stages: [pre-commit]
+      - id: ship-guard
+        name: master takes only commits CI passed
+        entry: python3 scripts/ship.py --pre-push
         language: system
-        files: '(\.rs$|Cargo\.(toml|lock)$)'
         pass_filenames: false
-      # Windows compile gate. `check` does not link, so this needs only
-      # `rustup target add x86_64-pc-windows-msvc` — no Windows machine, no
-      # linker, no SDK. A green `cargo test` on macOS proves nothing about a
-      # `cfg(windows)` arm, so this is the only thing standing between the
-      # Windows surfaces and a build that was never compiled.
-      #
-      # Scope widens as each crate is made Windows-clean; the goal is
-      # `--workspace`. Still out: nerve-tmux-surface (unix-only by design).
-      - id: cargo-check-windows
-        name: cargo check (windows target)
-        entry: cargo check -p nerve-platform -p nerve-hub -p nerve-surface-core -p nerve-windows-surface --all-targets --all-features --target x86_64-pc-windows-msvc
-        language: system
-        files: '(\.rs$|Cargo\.(toml|lock)$)'
-        pass_filenames: false
-
-      - id: nerve-hook-tests
-        name: nerve hook unit tests
-        entry: python3 sources/agents/tests/test_nerve_hook.py
-        language: system
-        files: '^(plugins/nerve/hooks/|sources/agents/tests/)'
-        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
