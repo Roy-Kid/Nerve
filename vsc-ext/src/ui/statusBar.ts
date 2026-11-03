@@ -97,7 +97,7 @@ export class NerveStatusBar {
 
 function tooltip(
   jobs: readonly Job[],
-  worst: ReturnType<typeof worstStatus>,
+  worst: Status,
   askCount: number,
 ): string {
   const counts = new Map<string, number>();
