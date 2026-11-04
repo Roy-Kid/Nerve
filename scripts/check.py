@@ -3,8 +3,7 @@
 A CI job (`.github/workflows/ci.yml`) is setup, then `scripts/check.py --job
 <name>`, and nothing else; `scripts/test_check.py` holds it to that. The
 pre-commit hook runs the job this host can (`macos` on a Mac); the Windows
-job runs on CI, and `scripts/ship.py` waits for it before master takes the
-commit.
+job runs on CI, on every push to dev or master.
 """
 import argparse
 import glob

@@ -1,13 +1,13 @@
 # Every job is setup, then one `scripts/check.py --job <name>`: the commit hook
 # runs the same function for the job its host can run, so a job here already
-# ran before the push, or is one a Mac cannot run (Windows), which
-# `scripts/ship.py` waits for. `scripts/test_check.py` holds this file to that.
+# ran before the push, or is one a Mac cannot run (Windows). A push runs only
+# Windows; the Mac job runs on demand. `scripts/test_check.py` holds this file
+# to that.
 name: CI
 
 on:
   push:
-    branches: ['ci/**']
-  pull_request:
+    branches: [dev, master]
   workflow_dispatch:
 
 env:
@@ -16,6 +16,8 @@ env:
 jobs:
   macos:
     name: macOS
+    # The commit hook ran this on a Mac already.
+    if: github.event_name != 'push'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v7

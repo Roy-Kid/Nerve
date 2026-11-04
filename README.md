@@ -34,7 +34,6 @@ Agent-facing layout: [`CLAUDE.md`](./CLAUDE.md) · [`AGENTS.md`](./AGENTS.md).
 
 ```bash
 python3 scripts/check.py                         # every check a commit and CI run on this host
-python3 scripts/ship.py                          # push: CI first, then master
 ./scripts/nerve.sh --help                        # dev launcher (explicit flags)
 ./scripts/nerve.sh --run                         # build + open Nerve.app
 ./scripts/nerve.sh --demo                        # sample jobs (hub must be up)

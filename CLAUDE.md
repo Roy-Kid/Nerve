@@ -44,7 +44,6 @@ cd index && npm run dev   # http://localhost:3000/docs
 
 ```bash
 python3 scripts/check.py                            # what a commit runs: the CI job for this host
-python3 scripts/ship.py                             # push: CI on ci/check, then master once every workflow passed
 ./scripts/nerve.sh --help                           # dev launcher (explicit flags only)
 ./scripts/nerve.sh --run                            # build + open Nerve.app
 ./scripts/nerve.sh --build --tmux --tmux-reload     # install tmux surface + reload

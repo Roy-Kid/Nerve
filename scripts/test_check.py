@@ -16,7 +16,6 @@ def load(name: str):
 
 
 check = load("check")
-ship = load("ship")
 SETUP = re.compile(r"^$")  # Nothing but the gate runs in a job.
 
 
@@ -68,24 +67,6 @@ class ParityTests(unittest.TestCase):
                "      - name: x\n        run: |\n          echo a\n          echo b\n  windows:\n    steps: []\n"
         self.assertEqual(workflow_runs(text), {"macos": ["python3 scripts/check.py --job macos", "echo a\necho b"],
                                                "windows": []})
-
-
-class ShipTests(unittest.TestCase):
-    def push(self, branch, sha="a" * 40, green=False):
-        with patch.object(ship, "verdict", return_value=(green, [] if green else ["CI"])) as verdict:
-            return ship.guard([(sha, branch)]), verdict
-
-    def test_an_untried_commit_cannot_reach_master(self):
-        self.assertEqual(self.push("master")[0], 1)
-
-    def test_a_commit_every_workflow_passed_goes_through(self):
-        self.assertEqual(self.push("master", green=True)[0], 0)
-
-    def test_staging_branches_and_deletions_are_not_asked(self):
-        for branch, sha in (("ci/check", "a" * 40), ("master", "0" * 40)):
-            code, verdict = self.push(branch, sha=sha)
-            self.assertEqual(code, 0)
-            verdict.assert_not_called()
 
 
 if __name__ == "__main__":
