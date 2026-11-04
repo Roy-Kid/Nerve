@@ -463,8 +463,8 @@ impl JobStore {
     }
 
     /// Mark every request past its TTL expired and re-state the actions they
-    /// referred to. `GET /v1/actions/pending` runs this before it filters
-    /// (`IngestServer.swift:178`), so a stale request is never handed out.
+    /// referred to. `GET /v1/actions/pending` runs this before it filters, so a
+    /// stale request is never handed out.
     pub fn expire_pending(&mut self) -> bool {
         let now = self.now();
         let expired = self.pending.expire(now);

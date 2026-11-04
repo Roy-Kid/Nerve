@@ -353,7 +353,7 @@ fn text(value: &Value, pointer: &str) -> String {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 1. The first frame is a full resync (acceptance A6)
+// 1. The first frame is a full resync
 // ════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
@@ -433,11 +433,11 @@ async fn test_frame_jobs_match_get_jobs_and_embed_the_timeline() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 2. Changes reach live subscribers, coalesced (acceptance A6)
+// 2. Changes reach live subscribers, coalesced
 // ════════════════════════════════════════════════════════════════════════════
 
 // ════════════════════════════════════════════════════════════════════════════
-// 3. Terminal states leave through `departed` (acceptance A6)
+// 3. Terminal states leave through `departed`
 // ════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
@@ -531,7 +531,7 @@ async fn test_departed_is_drained_by_the_frame_that_carries_it() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 4. Reconnect and surface label (acceptance A6)
+// 4. Reconnect and surface label
 // ════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
@@ -571,5 +571,5 @@ async fn test_the_surface_label_does_not_change_the_frame() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 5. A stream is the reference the lifecycle counts (acceptance A6 + A7)
+// 5. A stream is the reference the lifecycle counts
 // ════════════════════════════════════════════════════════════════════════════

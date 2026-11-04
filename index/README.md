@@ -15,13 +15,16 @@ npm test
 
 | Path | Page |
 |------|------|
-| `/` | Landing (Story, Signal, Sources, Privacy, Get) |
+| `/` | Home (hero, signal, macOS, tmux, VS Code, docs) |
 | `/docs` | Docs hub |
 | `/docs/get-started` | Get started |
 | `/docs/plugin` | Agent plugins |
 | `/docs/machines` | Machines & remotes |
 | `/docs/status` | Status & lifecycle |
 | `/docs/ingest` | Ingest API |
+| `/docs/tmux` | tmux surface |
+| `/docs/vscode` | VS Code surface |
+| `/docs/windows` | Windows surface |
 | `/docs/privacy` | Privacy |
 
 Handbook body: [`src/docs/content.ts`](./src/docs/content.ts).  

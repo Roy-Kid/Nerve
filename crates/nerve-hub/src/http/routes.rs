@@ -1,7 +1,7 @@
 //! The route table, and the one thing its handlers share.
 //!
-//! One row per `(method, path)` pair of `IngestServer.swift:166`, legacy
-//! aliases included. Swift routes on the tuple, so a known path with the wrong
+//! One row per `(method, path)` pair of the Swift server it replaced, legacy
+//! aliases included. Swift routed on the tuple, so a known path with the wrong
 //! method lands in the same `default` case as an unknown path: both fallbacks
 //! below are therefore the same handler, and both answer 404 with the literal.
 
@@ -155,7 +155,7 @@ pub fn router(state: HubState) -> Router {
         .layer(middleware::from_fn(guard::allow_any_origin))
 }
 
-/// `IngestServer.swift:258` — unknown path and unsupported method alike.
+/// Unknown path and unsupported method alike.
 ///
 /// Shared with the stream router, which owes the same answer: Swift routes on
 /// the `(method, path)` tuple, so `POST /v1/stream` is as unknown to it as

@@ -82,10 +82,10 @@ class ShipTests(unittest.TestCase):
         self.assertEqual(self.push("master", green=True)[0], 0)
 
     def test_staging_branches_and_deletions_are_not_asked(self):
-        code, verdict = self.push("ci/abc")
-        self.assertEqual(code, 0)
-        self.assertEqual(self.push("master", sha="0" * 40)[0], 0)
-        verdict.assert_not_called()
+        for branch, sha in (("ci/check", "a" * 40), ("master", "0" * 40)):
+            code, verdict = self.push(branch, sha=sha)
+            self.assertEqual(code, 0)
+            verdict.assert_not_called()
 
 
 if __name__ == "__main__":

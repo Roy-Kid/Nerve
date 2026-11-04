@@ -14,7 +14,7 @@ use serde_json::Value;
 use crate::frame::{Frame, JobView};
 
 /// One hub frame carrying exactly one job per derived status, plus a departed
-/// row (acceptance A1).
+/// row.
 ///
 /// Shaped like what `GET /v1/stream` actually publishes
 /// (`crates/nerve-hub/src/sse/frame.rs` → `{"jobs":[…],"departed":[…]}`, each

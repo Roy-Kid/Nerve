@@ -63,6 +63,5 @@ http-body-util = "0.1"
 # Two test-only tokio features, unified with the runtime dependency above:
 # `io-util` for the hand-written SSE client in `tests/sse_stream.rs` (line reads
 # over a raw `TcpStream`, so no HTTP client crate enters the tree), and
-# `test-util` for the paused clock `tests/lifecycle.rs` drives the grace timer
-# with.
+# `test-util` for the paused clock `tests/lifecycle.rs` runs on.
 tokio = { version = "1", features = ["io-util", "test-util"] }

@@ -19,8 +19,8 @@ use super::HubState;
 /// What every handler in this module answers with.
 type Reply = (StatusCode, Json<Value>);
 
-/// Which producer is asking. `sourceId` is the legacy spelling
-/// (`IngestServer.swift:176`); an absent one means "any producer".
+/// Which producer is asking. `sourceId` is the legacy spelling; an absent
+/// one means "any producer".
 ///
 /// As visible as the handlers that name it in their signature, and no more.
 #[derive(Debug, Deserialize)]
@@ -45,7 +45,7 @@ struct ActionResult {
     message: Option<String>,
 }
 
-/// Expire first, then filter (`IngestServer.swift:178`): a request past its TTL
+/// Expire first, then filter: a request past its TTL
 /// must never be handed to a producer.
 pub(super) async fn pending(
     State(state): State<HubState>,
@@ -91,7 +91,7 @@ pub(super) async fn result(
     }
     (
         StatusCode::NOT_FOUND,
-        // `IngestServer.swift:198` — matched verbatim by `./scripts/nerve.sh --verify-loop`.
+        // Matched verbatim by `./scripts/nerve.sh --verify-loop`.
         Json(json!({ "error": "pending action not found or producer mismatch" })),
     )
 }

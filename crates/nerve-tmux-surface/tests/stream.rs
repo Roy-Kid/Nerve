@@ -1,8 +1,6 @@
-//! `stream.rs` — one SSE attach, and how long to wait before the next one
-//! (spec T5 · acceptance A4).
+//! `stream.rs` — one SSE attach, and how long to wait before the next one.
 //!
 //! ─────────────────────────────────────────────────────────────────────────
-//! API CONTRACT — the implementer fills `src/stream.rs` to satisfy this file.
 //! Tests are never edited to fit an implementation.
 //! ─────────────────────────────────────────────────────────────────────────
 //!
@@ -30,8 +28,8 @@
 //! /// One long-lived `GET /v1/stream?surface=tmux`. Blocking and pull-based:
 //! /// this crate has no async runtime (see `Cargo.toml`).
 //! pub trait FrameSource {
-//!     /// Open the connection. This is the surface's refcount presence
-//!     /// (spec Summary): holding it open is what keeps the hub alive.
+//!     /// Open the connection: the surface's presence, which the hub counts
+//!     /// for routing. The hub outlives it either way.
 //!     fn open(&mut self) -> Result<(), StreamError>;
 //!     /// Block for the next frame. `Ok(None)` = the hub closed the stream.
 //!     fn next_frame(&mut self) -> Result<Option<frame::Frame>, StreamError>;
@@ -211,7 +209,7 @@ fn session_with(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Backoff (acceptance A4)
+// Backoff
 // ════════════════════════════════════════════════════════════════════════════
 
 /// Acceptance A4, hard-coded: `0.5, 1, 2, 4, 8, 16, 30, 30`.
@@ -250,7 +248,7 @@ fn test_a_success_resets_the_delay_to_the_first_step() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// StreamSession (acceptance A4)
+// StreamSession
 // ════════════════════════════════════════════════════════════════════════════
 
 /// Acceptance A4: the first failure writes `@nerve_status_offline`.

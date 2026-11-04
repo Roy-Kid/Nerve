@@ -44,7 +44,7 @@ run-shell "nerve-tmux-surface install"
 
 | Key | Action |
 |-----|--------|
-| `prefix + e` (closed) | Open sidebar; focus stays on your content pane |
+| `prefix + e` (closed) | Open sidebar, focused |
 | `prefix + e` (open, unfocused) | Focus sidebar |
 | `prefix + e` (open, focused) | Unfocus back to content pane |
 | `prefix + q` (sidebar focused) | Close sidebar |

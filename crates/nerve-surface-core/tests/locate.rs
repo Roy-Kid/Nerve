@@ -1,4 +1,4 @@
-//! `locate.rs` — finding the hub binary (spec T4 · acceptance A3).
+//! `locate.rs` — finding the hub binary.
 //!
 //! The rule under test is the *order*: install directories first, then a
 //! `cargo install`, then whatever the user's shell would have found. First hit

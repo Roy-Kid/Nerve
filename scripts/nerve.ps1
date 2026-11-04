@@ -106,7 +106,7 @@ function Assert-InstallStopped {
         foreach ($process in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
             if ($process.Path -and
                 ([IO.Path]::GetDirectoryName($process.Path) -eq $InstallDir)) {
-                throw 'Quit Nerve and other Nerve surfaces, wait 30 seconds for the hub to stop, then retry.'
+                throw 'Quit Nerve, its other surfaces and the hub, then retry.'
             }
         }
     }
@@ -116,7 +116,7 @@ function Assert-VerifyIsolated {
     $client = New-Object System.Net.Sockets.TcpClient
     try {
         if ($client.ConnectAsync('127.0.0.1', 17890).Wait(500)) {
-            throw 'Port 17890 is already in use. Quit existing Nerve surfaces and wait for the hub to stop before verification.'
+            throw 'Port 17890 is already in use. Quit Nerve and its hub before verification.'
         }
     } catch [System.AggregateException] {
         # Connection refused: no existing hub to modify with the fixture.

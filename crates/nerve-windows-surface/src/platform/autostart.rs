@@ -7,10 +7,9 @@
 //! want one of those is the AppUserModelID, which [`super::aumid`] handles
 //! separately.
 //!
-//! Default off, and deliberately so: autostart plus CLAUDE.md invariant 4
-//! means `nerve-hub.exe` becomes a permanently resident process, because this
-//! surface holds the stream open forever and the thirty-second grace never
-//! fires. That is a legitimate thing to want and not something an installer
+//! Default off, and deliberately so: the hub is resident once started
+//! (CLAUDE.md invariant 4), so autostart means `nerve-hub.exe` runs from every
+//! login on. That is a legitimate thing to want and not something an installer
 //! should decide.
 //!
 //! Every function is total. Failing to read or write a registry value costs

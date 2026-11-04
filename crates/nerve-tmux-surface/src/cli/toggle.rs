@@ -1,7 +1,7 @@
-//! `prefix + e` — open (no focus steal) or toggle focus.
+//! `prefix + e` — open focused, or toggle focus.
 //! `prefix + q` — close when the sidebar pane is focused (`close` subcommand).
 //!
-//! 1. **closed** → open sidebar, focus stays on content pane
+//! 1. **closed** → open sidebar, focused (auto-create stays unfocused)
 //! 2. **open, sidebar focused** → unfocus (back to content)
 //! 3. **open, sidebar unfocused** → focus sidebar
 //!

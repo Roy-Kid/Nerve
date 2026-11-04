@@ -1,10 +1,9 @@
-//! State-core contract tests (spec `nerve-hub` · T2 · acceptance A4 + A8).
+//! State-core contract tests.
 //!
-//! RED on purpose: nothing below exists yet. T3 implements `model/` + `state/`
-//! against the contract in this header; these tests are the API definition.
+//! What `model/` and `state/` expose, and the behaviour each part keeps.
 //!
 //! ─────────────────────────────────────────────────────────────────────────
-//! MINIMAL API CONTRACT (what T3 must expose)
+//! API CONTRACT
 //! ─────────────────────────────────────────────────────────────────────────
 //!
 //! ```text
@@ -12,7 +11,7 @@
 //!   pub struct Job      // serde, camelCase wire names, Clone + Debug
 //!   pub struct Event    // serde, camelCase wire names, Clone + Debug
 //!   pub struct Envelope // {alias?, machineKind?, jobs?, events?} — declared
-//!                       // for T4/T5 routes; NOT exercised in this file.
+//!                       // for the HTTP routes; NOT exercised in this file.
 //!   pub enum ActionState { Available, Pending, Succeeded, Failed, Expired, Unsupported }
 //!                       // serde rename_all = "lowercase"
 //!
@@ -42,7 +41,7 @@
 //!       pub fn expire_and_reap(&mut self);
 //!       pub fn clear(&mut self);
 //!
-//!       // Dormant pending subsystem (spec D6): ported + testable, no route
+//!       // Dormant pending subsystem: ported + testable, no route
 //!       // enqueues today. `id` is caller-supplied so the hub needs no uuid dep.
 //!       pub fn enqueue_pending(&mut self, id: &str, job_id: &str, action_id: &str) -> bool;
 //!       pub fn pending_json(&self, producer_id: Option<&str>) -> serde_json::Value;
@@ -78,7 +77,7 @@
 //!   re-arm to the main queue; the hub has no run loop, so the reset to
 //!   `available` happens inline — the observable end state is the contract.
 //! * `ensureLocalActions` is deliberately **not** ported: producer actions are
-//!   echoed verbatim (spec "刻意分歧").
+//!   echoed verbatim.
 //!
 //! Determinism: fake clock + fake `PidProbe`, hard-coded goldens, no wall
 //! clock, no network, no filesystem.
@@ -661,7 +660,7 @@ fn test_timeline_keeps_only_the_newest_forty_entries() {
     assert_eq!(text(&timeline[0], "/jobId"), "a1");
 }
 
-// ── 6. Reaper (acceptance A8) ───────────────────────────────────────────────
+// ── 6. Reaper ───────────────────────────────────────────────────────────────
 
 #[test]
 fn test_reaper_ends_job_when_pid_probe_reports_dead() {

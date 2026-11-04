@@ -7,7 +7,7 @@
 //!
 //! Where the lock *lives* is the surface's business, not this module's: the
 //! tmux sidebar keeps it in a tmux user option, which dies with the server it
-//! belongs to and leaves nothing on disk (acceptance A11); another surface may
+//! belongs to and leaves nothing on disk; another surface may
 //! reasonably use a registry key or a bound port. [`LockStore`] is that seam,
 //! and the ownership rule below is the same either way.
 

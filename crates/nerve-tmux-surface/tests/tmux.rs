@@ -1,8 +1,6 @@
-//! `tmux.rs` — the only place this crate talks to tmux (spec T6 ·
-//! acceptance A5).
+//! `tmux.rs` — the only place this crate talks to tmux.
 //!
 //! ─────────────────────────────────────────────────────────────────────────
-//! API CONTRACT — the implementer fills `src/tmux.rs` to satisfy this file.
 //! Tests are never edited to fit an implementation.
 //! ─────────────────────────────────────────────────────────────────────────
 //!
@@ -43,7 +41,7 @@
 //! }
 //!
 //! /// Global tmux user options — this surface's only persistent state, and
-//! /// it lives in tmux, not on disk (acceptance A11).
+//! /// it lives in tmux, not on disk.
 //! pub trait LockStore {   // nerve_surface_core::instance
 //!     fn get(&mut self, name: &str) -> Result<Option<String>, TmuxError>;
 //!     fn set(&mut self, name: &str, value: &str) -> Result<(), TmuxError>;
@@ -56,7 +54,7 @@
 //! ```
 //!
 //! Writing the option is not enough: tmux only repaints the status line after
-//! `refresh-client -S` (spec Domain basis). Reading uses `show-options -gqv`,
+//! `refresh-client -S`. Reading uses `show-options -gqv`,
 //! which prints the bare value and stays quiet about options nobody set.
 //!
 //! Determinism: fake runner, literal argv assertions. No tmux process is
@@ -109,7 +107,7 @@ fn argv(calls: &Calls) -> Vec<Vec<String>> {
     calls.borrow().clone()
 }
 
-/// The structural rule acceptance A5 is really about: nothing this crate hands
+/// The structural rule: nothing this crate hands
 /// tmux is a shell line.
 fn assert_no_shell(calls: &Calls) {
     for call in argv(calls) {
@@ -186,7 +184,7 @@ fn test_a_gone_server_during_the_refresh_propagates_too() {
 // ── Classifying tmux's answer ───────────────────────────────────────────────
 
 /// What tmux(1) prints when the socket is gone. Not an error the surface
-/// reports — it is the surface's cue to exit 0 (acceptance A5).
+/// reports — it is the surface's cue to exit 0.
 #[test]
 fn test_no_server_running_is_recognised_as_server_gone() {
     let err = TmuxError::from_exit(1, "no server running on /private/tmp/tmux-501/default");

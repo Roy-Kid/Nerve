@@ -16,7 +16,7 @@ Stack: `nerve-hub` + tmux helper (Rust, `crates/`), SwiftUI menu-bar app (`Nerve
 | State hub daemon | `crates/nerve-hub/` (ingest contract, SSE frames, resident lifecycle) |
 | macOS app (surface) | `Nerve/Nerve/` (App, Models, Store, Services incl. `Services/Hub/`, UI) |
 | macOS UI package | `surfaces/macos/` (used by the menu-bar app) |
-| Tether surface | `surfaces/tether/` (installable plugin) |
+| Tether surface | `surfaces/tether/` (native plugin) · `surfaces/tether-web/` (web plugin package) |
 | Tether tests | `testing/tether/` (model and host integration) |
 | tmux surface | `surfaces/tmux/` (TPM entry) + `crates/nerve-tmux-surface/` (helper) |
 | Windows surface | `crates/nerve-windows-surface/` (tray icon + flyout) |
@@ -54,7 +54,6 @@ cargo test --workspace                              # hub (incl. hook mapper) + 
 ./scripts/nerve.sh --verify-surface                 # macOS surface regression
 ./scripts/nerve.sh --verify-tmux                    # tmux surface E2E (isolated tmux)
 ./scripts/nerve.sh --verify-vscode                  # VS Code surface unit tests
-./scripts/nerve.sh --check-windows                  # compile portable crates for Windows (no linker)
 ./scripts/nerve.ps1 -Help                           # Windows launcher (install / verify / run)
 ./scripts/nerve.sh --test-swift                     # Swift value-type unit harness
 cd vsc-ext && npm test                              # extension host unit tests
@@ -70,7 +69,7 @@ node scripts/capture-vscode-surface.mjs             # capture the VS Code surfac
 4. **Memory-only runtime jobs** — jobs and timelines live in hub RAM. `nerve-hub ensure` owns discovery, detached startup and readiness; the fixed loopback bind is the singleton lock. Closing surfaces never stops the daemon. Machine identity and machine configuration are persistent, tasks are not.
 5. **One authority per machine** — hooks POST raw events to `/v1/hook?producer=…` on their own machine. The local hub alone manages SSH configuration, LocalForward tunnels and origin-scoped remote full snapshots. Replicate `/v1/stream?localOnly=true` only; never relay aggregated tasks. Remote disconnect retains its last snapshot with an offline machine state; only its origin hub reaps its PIDs. Clear deletes local jobs only.
 6. **Display only** — Nerve never runs, approves, cancels or submits input to agents. The hub publishes Open/Focus, Copy and log actions. Surfaces execute navigation and OS notifications, not task control.
-7. **Surfaces consume protocol v2** — `/v1/frame` and SSE publish `protocolVersion`, hub identity, monotonic revision, jobs, departed, authoritative display/order/summary, machine states and connection-targeted notifications. `/v1/jobs` uses the same projection. No surface lifecycle, classification, business deduplication, notification election or SSH execution. UI search/filter/selection/layout may only change presentation. Hub notification routing uses instance + connection identity, Ask escalation, 120-second deduplication and single/all policy (macOS, Windows, VS Code, tmux priority). Send at most once; never replay on reconnect. Old protocols require an upgrade.
+7. **Surfaces consume protocol v2** — `/v1/frame` and SSE publish `protocolVersion`, hub identity, monotonic revision, jobs, departed, authoritative display/order/summary, machine states and connection-targeted notifications. `/v1/jobs` uses the same projection. No surface lifecycle, classification, business deduplication, notification election or SSH execution. UI search/filter/selection/layout may only change presentation. Hub notification routing uses instance + connection identity, Ask escalation, 120-second deduplication and single/all policy (macOS, Windows, Tether, VS Code, tmux priority). Send at most once; never replay on reconnect. Old protocols require an upgrade.
 8. **Public docs** — edit `index/src/docs/content.ts` (and site UI), not a repo `docs/` folder. Keep root/plugin READMEs as short pointers.
 
 ## Default workflow

@@ -1,7 +1,6 @@
-//! `instance.rs` — one surface per tmux server (spec T6 · acceptance A6).
+//! `instance.rs` — one surface per tmux server.
 //!
 //! ─────────────────────────────────────────────────────────────────────────
-//! API CONTRACT — the implementer fills `src/instance.rs` to satisfy this file.
 //! Tests are never edited to fit an implementation.
 //! ─────────────────────────────────────────────────────────────────────────
 //!
@@ -45,7 +44,7 @@
 //! ```
 //!
 //! The lock lives in a tmux option, not in a file: the surface keeps **no**
-//! state on disk (acceptance A11), and an option dies with the server it
+//! state on disk, and an option dies with the server it
 //! belongs to, which is exactly the lock's intended lifetime.
 //!
 //! `pid <= 1` is never an owner — 0 is "no process" and 1 is init — the same

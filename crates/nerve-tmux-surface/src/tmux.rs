@@ -10,7 +10,7 @@
 //! value and stays quiet about options nobody set.
 //!
 //! tmux user options are also this surface's only persistent state, and they
-//! live in tmux rather than on disk (acceptance A11) — an option dies with the
+//! live in tmux rather than on disk — an option dies with the
 //! server it belongs to, which is exactly the intended lifetime.
 
 use nerve_surface_core::instance::LockStore;
@@ -129,7 +129,7 @@ impl<R: TmuxRunner> SegmentWriter for TmuxWriter<R> {
 
 /// The single-surface lock lives in a tmux user option: it dies with the
 /// server it belongs to, which is exactly the lock's intended lifetime, and it
-/// keeps this surface's promise to write nothing to disk (acceptance A11).
+/// keeps this surface's promise to write nothing to disk.
 impl<R: TmuxRunner> LockStore for TmuxWriter<R> {
     type Error = TmuxError;
 

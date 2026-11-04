@@ -18,7 +18,7 @@ use super::HubState;
 /// What every handler in this module answers with.
 type Reply = (StatusCode, Json<Value>);
 
-/// Envelope only (`IngestServer.swift:309`): this route has no bare-array
+/// Envelope only: this route has no bare-array
 /// fallback, so a bare job array is a decode failure.
 pub(super) async fn snapshot(State(state): State<HubState>, body: Bytes) -> Reply {
     match Envelope::decode_snapshot(&body) {
@@ -33,7 +33,7 @@ pub(super) async fn snapshot(State(state): State<HubState>, body: Bytes) -> Repl
     }
 }
 
-/// Envelope, bare event array, or a single event (`IngestServer.swift:295`).
+/// Envelope, bare event array, or a single event.
 /// Only the envelope form can carry the alias [`fill_alias`] insists on.
 pub(super) async fn events(State(state): State<HubState>, body: Bytes) -> Reply {
     match Envelope::decode_events(&body) {
@@ -69,7 +69,7 @@ fn apply(state: &HubState, mut envelope: Envelope) -> Reply {
     (StatusCode::OK, Json(json!({ "applied": applied })))
 }
 
-/// Stage one of the two-stage alias fill (`IngestServer.swift:263`).
+/// Stage one of the two-stage alias fill.
 ///
 /// The envelope names the machine; when it does not, the first job carrying a
 /// non-empty alias lends its own, and every empty job alias is filled from the

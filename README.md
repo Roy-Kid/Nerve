@@ -33,13 +33,11 @@ Agent-facing layout: [`CLAUDE.md`](./CLAUDE.md) · [`AGENTS.md`](./AGENTS.md).
 ## Quick commands
 
 ```bash
+python3 scripts/check.py                         # every check a commit and CI run on this host
+python3 scripts/ship.py                          # push: CI first, then master
 ./scripts/nerve.sh --help                        # dev launcher (explicit flags)
 ./scripts/nerve.sh --run                         # build + open Nerve.app
 ./scripts/nerve.sh --demo                        # sample jobs (hub must be up)
-cargo test --workspace
-python3 sources/agents/tests/test_nerve_hook.py
-node --test plugins/nerve/hooks/nerve.test.js
-cd index && npm test && npm run build            # site
 ```
 
 ## Layout
@@ -48,13 +46,14 @@ cd index && npm test && npm run build            # site
 CLAUDE.md / AGENTS.md   Agent harness (router)
 .claude/notes/          Passive agent notes
 plugins/nerve/          Marketplace hooks (Claude Node, Codex Python, Grok HTTP)
-crates/nerve-hub/       Hub daemon (+ Grok HTTP mapper at POST /v1/hook)
+crates/                 Rust: nerve-hub (daemon, POST /v1/hook mapper), nerve-surface-core,
+                        nerve-platform, nerve-tmux-surface, nerve-windows-surface
 Nerve/                  macOS menu-bar app (surface)
-crates/                 Rust: nerve-hub daemon + nerve-tmux-surface helper
 surfaces/macos/         macOS menu-bar UI package
-surfaces/tether/        Tether plugin package
+surfaces/tether/        Tether native plugin
+surfaces/tether-web/    Tether web plugin package
 surfaces/tmux/          tmux plugin surface (TPM entry)
-testing/tether/        Tether model and host integration tests
+testing/tether/         Tether model and host integration tests
 vsc-ext/                VS Code / Cursor surface (status bar + Activity Bar)
 index/                  Marketing site + /docs SPA
 fixtures/ · scripts/ · assets/

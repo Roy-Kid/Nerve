@@ -1,10 +1,9 @@
-//! HTTP contract tests (spec `nerve-hub` · T4 · acceptance A1 / A2 / A3 / A5).
+//! HTTP contract tests.
 //!
-//! RED on purpose: `nerve_hub::http` does not exist yet. T5 implements it
-//! against the contract in this header; this file is the API definition.
+//! The HTTP surface `nerve_hub::http` exposes, pinned route by route.
 //!
 //! ─────────────────────────────────────────────────────────────────────────
-//! MINIMAL API CONTRACT (what T5 must expose)
+//! API CONTRACT
 //! ─────────────────────────────────────────────────────────────────────────
 //!
 //! ```text
@@ -21,7 +20,7 @@
 //!                                                     // `ServiceExt::oneshot`
 //! ```
 //!
-//! * `GET /v1/stream` (SSE) is **not** in this file — it lands with T6/T7.
+//! * `GET /v1/stream` (SSE) is **not** in this file — see `sse_stream.rs`.
 //! * The loopback guard reads the peer from `ConnectInfo<SocketAddr>`, so the
 //!   binary must serve with
 //!   `router.into_make_service_with_connect_info::<SocketAddr>()`. These tests
@@ -30,9 +29,9 @@
 //! * Handlers return `(StatusCode, Json<_>)`: no input may panic, and nothing
 //!   may answer 5xx.
 //!
-//! Response bodies are asserted against the literals in
-//! `Nerve/Nerve/Ingest/IngestServer.swift` **as parsed JSON**, not as bytes:
-//! Swift emits hand-written string literals while `serde_json` sorts object
+//! Response bodies are asserted against the literals of the Swift ingest
+//! server the hub replaced (`IngestServer.swift`, since removed) **as parsed
+//! JSON**, not as bytes: Swift emitted hand-written string literals while `serde_json` sorts object
 //! keys, and key order was never part of the contract.
 //!
 //! ─────────────────────────────────────────────────────────────────────────
@@ -40,7 +39,7 @@
 //! ─────────────────────────────────────────────────────────────────────────
 //!
 //! 1. **The all-optional envelope swallows single objects.**
-//!    `decodeEnvelope` (`IngestServer.swift:295`) and `decodeSnapshot` (`:309`)
+//!    `decodeEnvelope` and `decodeSnapshot` (`:309`)
 //!    try `IngestEnvelope` *first*, and every field of it is optional, so a
 //!    single event object or a single job object decodes as an envelope with no
 //!    `jobs` and no `events` — the payload is silently dropped and the answer is
@@ -265,7 +264,7 @@ fn job_in(jobs: &Value, id: &str) -> Value {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 1. Route table parity (acceptance A1 · `IngestServer.swift:166`)
+// 1. Route table parity
 // ════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
@@ -273,7 +272,7 @@ async fn test_health_returns_the_service_literal() {
     let reply = call(&hub(), get("/v1/health")).await;
 
     assert_eq!(reply.status, StatusCode::OK);
-    // `IngestServer.swift:168` — literal, including the pinned version string.
+    // Literal, including the pinned version string.
     assert_eq!(
         reply.json(),
         json!({
@@ -311,7 +310,7 @@ async fn test_snapshot_makes_the_job_readable_on_get_jobs() {
 
 #[tokio::test]
 async fn test_pending_with_producer_id_is_an_empty_array() {
-    // The pending subsystem is ported but dormant (spec D6): nothing enqueues,
+    // The pending subsystem is ported but dormant: nothing enqueues,
     // so the contract is an empty array rather than a 404.
     let reply = call(&hub(), get("/v1/actions/pending?producerId=t")).await;
 
@@ -326,7 +325,7 @@ async fn test_action_result_miss_returns_the_404_literal() {
     let reply = call(&hub(), post("/v1/actions/result?producerId=missing", &body)).await;
 
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
-    // `IngestServer.swift:198` — literal, matched by `./scripts/nerve.sh --verify-loop`.
+    // Literal, matched by `./scripts/nerve.sh --verify-loop`.
     assert_eq!(
         reply.json(),
         json!({ "error": "pending action not found or producer mismatch" })
@@ -373,7 +372,7 @@ async fn test_refresh_returns_the_job_list() {
 
 #[tokio::test]
 async fn test_actions_invoke_is_not_ported() {
-    // Deliberately dropped (spec "刻意分歧"): invoking an action is an
+    // Deliberately dropped: invoking an action is an
     // NSWorkspace side effect and belongs to a surface. The body is whatever
     // the generic fallback says; only the status is contract.
     let body = json!({ "jobId": "a1", "actionId": "open" }).to_string();
@@ -388,13 +387,12 @@ async fn test_unknown_path_returns_the_not_found_literal() {
     let reply = call(&hub(), get("/v1/nope")).await;
 
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
-    // `IngestServer.swift:258`.
     assert_eq!(reply.json(), json!({ "error": "not found" }));
 }
 
 #[tokio::test]
 async fn test_every_response_carries_the_cors_header() {
-    // `IngestServer.swift:333` writes the header on every reply, whatever the
+    // The Swift server wrote the header on every reply, whatever the
     // status: success, guard rejection, decode failure and fallback alike.
     let hub = hub();
     let oversized = json!({
@@ -427,7 +425,7 @@ async fn test_every_response_carries_the_cors_header() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 2. Envelope shape asymmetry (acceptance A2 · `IngestServer.swift:295` / `:309`)
+// 2. Envelope shape asymmetry
 // ════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
@@ -445,7 +443,7 @@ async fn test_events_accepts_an_envelope_body() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 3. Two-stage alias fill (acceptance A3 · `IngestServer.swift:263`)
+// 3. Two-stage alias fill
 // ════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
@@ -490,7 +488,6 @@ async fn test_snapshot_without_any_alias_is_rejected() {
 
     for reply in [empty, aliasless] {
         assert_eq!(reply.status, StatusCode::BAD_REQUEST);
-        // `IngestServer.swift:269`.
         assert_eq!(reply.json(), json!({ "error": "alias required" }));
     }
 }
@@ -517,7 +514,7 @@ async fn test_any_non_empty_alias_is_accepted() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 4. Cross-cutting guards (acceptance A5 · `IngestServer.swift:129` / `:100`)
+// 4. Cross-cutting guards
 // ════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
@@ -535,7 +532,6 @@ async fn test_non_loopback_peer_is_forbidden() {
     .await;
 
     assert_eq!(reply.status, StatusCode::FORBIDDEN);
-    // `IngestServer.swift:134`.
     assert_eq!(reply.json(), json!({ "error": "loopback only" }));
 }
 
@@ -575,7 +571,7 @@ async fn test_ipv6_loopback_peer_is_allowed() {
 
 #[tokio::test]
 async fn test_body_over_one_megabyte_is_rejected() {
-    // `IngestServer.swift:100` — 1 MiB ceiling with its own literal, so the
+    // 1 MiB ceiling with its own literal, so the
     // limit cannot be delegated to axum's silent `DefaultBodyLimit`.
     let body = json!({
         "alias": MACHINE_ALIAS,
@@ -642,7 +638,7 @@ async fn test_no_input_shape_makes_a_handler_fail() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 5. Job serialization: the embedded timeline (spec "刻意分歧")
+// 5. Job serialization: the embedded timeline
 // ════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]

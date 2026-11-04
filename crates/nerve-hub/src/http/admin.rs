@@ -11,8 +11,7 @@ use crate::lifecycle::NotifyPolicy;
 use super::HubState;
 
 /// Pinned by the contract, not by the crate version: producers, the site
-/// handbook and `./scripts/nerve.sh --verify-loop` all match this exact literal
-/// (`IngestServer.swift:168`).
+/// handbook and `./scripts/nerve.sh --verify-loop` all match this exact literal.
 const SERVICE_VERSION: &str = "0.1.0";
 
 pub(super) async fn health(State(state): State<HubState>) -> (StatusCode, Json<Value>) {

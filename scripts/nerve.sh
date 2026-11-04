@@ -62,11 +62,10 @@ Verify / test (each is standalone):
   --verify-loop        ingest contract E2E (needs hub on :17890)
   --verify-surface     macOS surface regression (starts hub if needed)
   --verify-tmux        tmux surface E2E (isolated tmux server)
-  --verify-vscode      VS Code surface unit tests (status / frame / focus)
+  --verify-vscode      VS Code surface unit tests
   --vscode             watch the VS Code extension (F5 in a vsc-ext window)
   --test-swift         swiftc unit harness for Hub frame types
   --check-plugin       reject forbidden plugin package files
-  --check-windows      compile the portable crates for Windows (no linker needed)
 
   node scripts/capture-vscode-surface.mjs  capture the VS Code surface screenshot
 
@@ -213,7 +212,6 @@ nerve_verify_surface() {
   local hub="$app/Contents/MacOS/nerve-hub"
   local fixture="$NERVE_FIXTURE"
   local base="$NERVE_BASE"
-  local grace_secs=120
 
   cleanup() {
     if [[ -n "$nerve_hub_pid" ]]; then
@@ -294,7 +292,6 @@ nerve_verify_tmux() {
   local base="$NERVE_BASE"
   nerve_tmux_label="nervesurf"
   local label="$nerve_tmux_label"
-  local grace_secs="${NERVE_GRACE_SECS:-20}"
   local tick=0.1
   local ticks_health=100
   local ticks_sidebar=50
@@ -337,7 +334,7 @@ nerve_verify_tmux() {
   nerve_port_free || nerve_fail ":17890 is already serving — stop it and retry"
   tmux -L "$label" kill-server 2>/dev/null || true
 
-  echo "== hub on :17890 (grace ${grace_secs}s) =="
+  echo "== hub on :17890 =="
   nerve_hub_log="$(mktemp "${TMPDIR:-/tmp}/nerve-verify-tmux.XXXXXX")"
   "$hub" serve >"$nerve_hub_log" 2>&1 &
   nerve_hub_pid=$!
@@ -404,27 +401,18 @@ nerve_verify_tmux() {
   grep -qF 'xcodebuild Nerve' <<<"$jobs" || nerve_fail "injected jobs missing xcodebuild Nerve"
   echo "ok: hub has demo jobs"
 
-  echo "== hub outlives nothing: sidebar leaves, refcount drops =="
+  echo "== the hub outlives its surfaces: sidebar leaves, hub keeps serving =="
   tmux -L "$label" kill-pane -t "$sidebar_pane" 2>/dev/null || nerve_fail "could not kill sidebar pane $sidebar_pane"
+  sleep 3
+  kill -0 "$nerve_hub_pid" 2>/dev/null || nerve_fail "hub exited when the last surface left"
+  curl -sf "$base/v1/jobs" >/dev/null || nerve_fail "hub stopped serving when the last surface left"
+  echo "ok: hub still serving with no surface attached"
 
-  local deadline=$((grace_secs + 15))
-  local gone=""
-  for _ in $(seq 1 $((deadline * 10))); do
-    if ! kill -0 "$nerve_hub_pid" 2>/dev/null; then
-      gone=1
-      break
-    fi
-    sleep "$tick"
-  done
-  if [[ -z "$gone" ]]; then
-    cat "$nerve_hub_log" >&2 || true
-    nerve_fail "hub was still running ${deadline}s after the last surface left"
-  fi
-
+  kill "$nerve_hub_pid" 2>/dev/null || true
   wait "$nerve_hub_pid" 2>/dev/null || true
   nerve_hub_pid=""
-  nerve_port_free || nerve_fail ":17890 still answers after the hub exited"
-  echo "ok: hub exited within grace, port released"
+  nerve_port_free || nerve_fail ":17890 still answers after the hub was stopped"
+  echo "ok: hub stopped on request, port released"
 
   echo "== no notifications, no daemons, no disk state =="
   local scan_dirs=("$ROOT/surfaces" "$ROOT/crates/nerve-tmux-surface")
@@ -613,7 +601,6 @@ DO_VERIFY_LOOP=0
 DO_VERIFY_SURFACE=0
 DO_VERIFY_TMUX=0
 DO_VERIFY_VSCODE=0
-DO_CHECK_WINDOWS=0
 DO_VSCODE=0
 DO_TEST_SWIFT=0
 
@@ -630,7 +617,6 @@ while [[ $# -gt 0 ]]; do
     --verify-surface) DO_VERIFY_SURFACE=1 ;;
     --verify-tmux) DO_VERIFY_TMUX=1 ;;
     --verify-vscode) DO_VERIFY_VSCODE=1 ;;
-    --check-windows) DO_CHECK_WINDOWS=1 ;;
     --vscode) DO_VSCODE=1 ;;
     --test-swift) DO_TEST_SWIFT=1 ;;
     --check-plugin) python3 -B "$ROOT/scripts/check-plugin.py"; exit $? ;;
@@ -646,8 +632,7 @@ done
 
 if [[ $DO_BUILD -eq 0 && $DO_APP -eq 0 && $DO_TMUX -eq 0 && $DO_TMUX_RELOAD -eq 0 && $DO_DEMO -eq 0 && $DO_DEMO_SURFACES -eq 0 \
   && $DO_VERIFY_LOOP -eq 0 && $DO_VERIFY_SURFACE -eq 0 && $DO_VERIFY_TMUX -eq 0 \
-  && $DO_VERIFY_VSCODE -eq 0 && $DO_VSCODE -eq 0 && $DO_TEST_SWIFT -eq 0 \
-  && $DO_CHECK_WINDOWS -eq 0 ]]; then
+  && $DO_VERIFY_VSCODE -eq 0 && $DO_VSCODE -eq 0 && $DO_TEST_SWIFT -eq 0 ]]; then
   nerve_usage
   exit 2
 fi
@@ -714,28 +699,6 @@ fi
 
 if [[ $DO_VERIFY_TMUX -eq 1 ]]; then
   nerve_verify_tmux
-fi
-
-nerve_check_windows() {
-  # `cargo check` does not link, so this needs only the target's standard
-  # library — no Windows machine, no linker, no SDK. It is what stands between
-  # the Windows surfaces and a `cfg(windows)` arm that was never compiled,
-  # because a green `cargo test` on macOS says nothing about one.
-  #
-  # nerve-tmux-surface is absent on purpose: tmux has no Windows port.
-  echo "==> cargo check (windows target)"
-  if ! rustup target list --installed | grep -q '^x86_64-pc-windows-msvc$'; then
-    echo "    adding the target"
-    rustup target add x86_64-pc-windows-msvc
-  fi
-  cargo check \
-    -p nerve-platform -p nerve-hub -p nerve-surface-core -p nerve-windows-surface \
-    --all-targets --all-features --target x86_64-pc-windows-msvc
-  echo "ALL OK"
-}
-
-if [[ $DO_CHECK_WINDOWS -eq 1 ]]; then
-  nerve_check_windows
 fi
 
 if [[ $DO_VERIFY_VSCODE -eq 1 ]]; then

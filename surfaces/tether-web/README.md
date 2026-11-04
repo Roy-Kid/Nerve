@@ -2,7 +2,7 @@
 
 `package/` is a runtime web plugin, with no native binaries, build step or
 dependency on Tether source. The Windows host installs it under Settings →
-Extensions. Product documentation is on the website at `/docs/tether`.
+Extensions. Product documentation is on the website at `/docs/vscode`, under the Tether web plugin.
 
 Opening the panel asks the Windows host to start the installed hub if health is offline. Install Nerve to `%LOCALAPPDATA%\Programs\Nerve` first. This surface reads full SSE frames,
 reconnects with backoff, and releases its stream when unloaded or disabled.

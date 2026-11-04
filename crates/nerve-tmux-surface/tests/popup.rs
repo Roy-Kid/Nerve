@@ -1,8 +1,6 @@
-//! `popup.rs` — the read-only job list behind `prefix + N` (spec T8 ·
-//! acceptance A8, unit half).
+//! `popup.rs` — the read-only job list behind `prefix + N`.
 //!
 //! ─────────────────────────────────────────────────────────────────────────
-//! API CONTRACT — the implementer fills `src/popup.rs` to satisfy this file.
 //! Tests are never edited to fit an implementation.
 //! ─────────────────────────────────────────────────────────────────────────
 //!

@@ -50,15 +50,11 @@ Hub and Rust surfaces use `tracing` (stderr + daily file under the OS log dir; `
 Grok's HTTP hook runner refuses loopback and non-HTTPS URLs (SSRF). `http://127.0.0.1:17890/v1/hook` is dropped fail-open, so a plugin that only registers `type: http` never updates Nerve. Grok hooks are `command` → `hooks/grok-post.js` POSTing the same body. Hub mapping is unchanged.
 
 <!-- mol:note:topic:notify-lease -->
-## 2026-09-18 — One hub, notify lease (Tether surface removed 2026-09-29)
+## 2026-09-18 — One hub, notify lease
 
 Every surface probes `/v1/health` before spawning; 17890 remains the lock. A second `nerve-hub serve` that loses the bind exits `AlreadyRunning`.
 
-Notifications: the hub never talks to UserNotifications. It names SSE connections (`?surface=`), publishes `notify` on every frame (`policy` `single`|`all`, elected `owner`, `surfaces`, `watchers`), and accepts `GET`/`PUT /v1/notify`. Default `single` prefers macos → windows → vscode → tmux so two surfaces on one machine do not both banner. Missing `notify` (old hub) still means everyone fires. Presence 0→1 does not republish (the connect frame is enough); 1→2 and drops do, so the remaining owner learns.
-
-Tether no longer hosts Nerve: `surfaces/tether` is deleted and `tether` left the preference order. The uncommitted work that made the app's views hostable (`surfaces/macos`, public `AppModel`/`JobStore`/panel inits) is in `git stash` "Tether surface work".
-
-<!-- mol:note:topic:windows-surface -->
+Notifications: the hub never talks to UserNotifications. It names SSE connections (`?surface=`), publishes `notify` on every frame (`policy` `single`|`all`, elected `owner`, `surfaces`, `watchers`), and accepts `GET`/`PUT /v1/notify`. Default `single` prefers macos → windows → tether → vscode → tmux so two surfaces on one machine do not both banner. Missing `notify` (old hub) still means everyone fires. Presence 0→1 does not republish (the connect frame is enough); 1→2 and drops do, so the remaining owner learns.
 
 <!-- mol:note:topic:windows-surface -->
 ## 2026-09-17 — Windows: four crates, and what the move exposed
@@ -69,8 +65,7 @@ menu-bar app is not portable — but the architecture already was. Windows gets
 its own peer surface (tray icon + flyout), not a port of anyone else's.
 
 **Crate split.** `nerve-platform` (leaf: wire paths, pid liveness) →
-`nerve-surface-core` (frames, status, grouping, hub client, ribbon weights,
-Ask) → the surfaces. Two crates rather than one because `nerve-hub` must not
+`nerve-surface-core` (frames, status, grouping, hub client, ribbon weights) → the surfaces. Two crates rather than one because `nerve-hub` must not
 depend on anything called "surface-core" (invariant 7, and the release profile
 says size matters) while it *does* share the `openURL` encoder with every
 decoder. `nerve-tmux-surface` keeps only tmux: panes, ps, ssh, ratatui,
@@ -186,6 +181,8 @@ Why: surfaces must be peers; the app quitting must not take state down; tmux plu
 ## 2026-08-23 — Jobs on another machine: the ssh pane is the pane
 
 Why: selecting the `arrhenius1` job in the tmux sidebar answered “no local pane” — the scan matched a remote job's pid and workspace against local panes, which can only fail (or, worse, collide with an unrelated local pid).
+
+*Superseded 2026-11-03 (top of this file): a job's machine is the hub's `terminal.host` and `extensions.sshHost`; the alias guessing and `~/.ssh/config` scoring below are gone.*
 
 **Rule**: a surface matches a job to a pane only when the job is on **its own** machine. `machine::local_alias()` (Bonjour LocalHostName → short hostname, the hook's own order) decides; a machine that cannot name itself treats everything as local, so the fallback is the old behaviour. Same principle as the hub's reaper: “remote pids are meaningless here”.
 
@@ -400,7 +397,7 @@ System waits derive Waiting (neutral gray), not human Attention (orange). Resume
 
 Why: `nerve.js` `mapEvent`, `nerve.py` `_map_event` and hub `map::map_event` had drifted. `permissiondenied` painted Ask on Grok only — Claude/Codex dropped the event and left the row on `completed` while the human was blocked on a denial. `stopcancelled` was not even in the Python allow-set. `postcompact` said "Compacting context" on the hub and "Context compacted — continuing" in both hooks; `posttoolusefailure` titled `"Tool failed"` on the hub and `"{tool} failed"` in both hooks; Python's posttooluse subagent set was missing `get_command_or_subagent_output`; the supersede ghost said "Session replaced" on Python only. `crates/nerve-hub/tests/golden_parity.rs` was named for this and never compared a mapper.
 
-**Rule**: `fixtures/hook-events/` is the contract. Each case is a `{name}.json` input plus a `{name}.facets.json` of **normalized** facets — every key present, absent → `null` (`ended` → `false`), `current.startedAt` stripped so timestamps cannot flake. `crates/nerve-hub/tests/hook_map_parity.rs` runs all three mappers against every fixture and diffs them at each other and at the golden. `nerve.js --map <fixture>` / `nerve.py --map <fixture>` are the adapters — argv, not env, not `NERVE_*`, always exit 0.
+**Rule**: `fixtures/hook-events/` is the contract. Each case is a `{name}.json` input plus a `{name}.facets.json` of **normalized** facets — every key present, absent → `null` (`ended` → `false`), `current.startedAt` stripped so timestamps cannot flake. `crates/nerve-hub/tests/hook_mapping.rs` runs the hub's mapper against every fixture and diffs it at the golden. The hooks no longer map: they forward raw events to `/v1/hook`, so the hub's is the only mapper.
 
 **Rule**: contested semantics now have one answer, majority wins. `permissiondenied` ≡ `permissionrequest` (waiting / required / approval / "Approval needed in agent"). `stopcancelled` ≡ `elicitation` ≡ `yourTurn`. `postcompact` empty bg → `"Context compacted — continuing"` (hub stopped reusing `precompact`). `posttoolusefailure` title → `"{tool} failed"` (`Facets.attention_title` became `Option<String>`); `stopfailure` stays `"Turn failed"`. Supersede ghost → `"Session ended (superseded)"`. `current.startedAt` is present on every non-ended job (was three silent schemas). Extensions drop `""` as well as `null` (Python was leaking `hookEvent: ""`). Compact JSON in `permission`'s dumped `tool_input` (`separators=(",", ":")`) — Python's default `", "`/`": "` was the fourth divergence and the fixture corpus caught it as a red `permission-request`.
 

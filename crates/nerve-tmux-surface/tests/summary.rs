@@ -1,7 +1,6 @@
-//! `summary.rs` — rendering `@nerve_status` (spec T3 · acceptance A2).
+//! `summary.rs` — rendering `@nerve_status`.
 //!
 //! ─────────────────────────────────────────────────────────────────────────
-//! API CONTRACT — the implementer fills `src/summary.rs` to satisfy this file.
 //! Tests are never edited to fit an implementation.
 //! ─────────────────────────────────────────────────────────────────────────
 //!
@@ -56,7 +55,7 @@
 use nerve_surface_core::tally::Tally;
 use nerve_tmux_surface::summary::{SummaryRenderer, escape_dynamic};
 
-/// The tally acceptance A2 names: two running, one ask, no problems.
+/// The tally: two running, one ask, no problems.
 fn a2_tally() -> Tally {
     Tally {
         running: 2,

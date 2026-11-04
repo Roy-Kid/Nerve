@@ -1,7 +1,6 @@
-//! `frame.rs` — decoding one SSE frame (spec T2 · acceptance A1).
+//! `frame.rs` — decoding one SSE frame.
 //!
 //! ─────────────────────────────────────────────────────────────────────────
-//! API CONTRACT — the implementer fills `src/frame.rs` to satisfy this file.
 //! Tests are never edited to fit an implementation.
 //! ─────────────────────────────────────────────────────────────────────────
 //!

@@ -171,8 +171,8 @@ impl JobsStore {
     /// Attach to the hub forever, on a thread of its own.
     ///
     /// `stream_path` names which surface is asking; the hub treats it as a log
-    /// tag (`crates/nerve-hub/src/http/stream.rs`). Holding this stream open is
-    /// what keeps the hub alive, so the thread outlives any window.
+    /// tag (`crates/nerve-hub/src/http/stream.rs`). The stream is what
+    /// the surface sees through, so the thread outlives any window.
     pub fn spawn_reader(
         self,
         home: PathBuf,

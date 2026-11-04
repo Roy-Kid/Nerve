@@ -34,10 +34,6 @@ index/dist/
 index/.rsbuild/
 
 # VS Code surface
-vsc-ext/node_modules/
-vsc-ext/out/
-vsc-ext/out-test/
-vsc-ext/*.vsix
 
 # Rust (cargo workspace)
 /target/
@@ -45,3 +41,5 @@ vsc-ext/*.vsix
 # MCP browser artifacts (screenshots, traces)
 .playwright-mcp/
 **/.playwright-mcp/
+# check.py --job windows assembles the download here.
+/package/

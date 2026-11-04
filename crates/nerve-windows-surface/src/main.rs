@@ -65,8 +65,7 @@ fn main() {
     let hub_installed = HubLocator::new(FileProbe, home.clone()).locate().is_some();
 
     let store = JobsStore::new();
-    // Holding this stream open is what keeps the hub alive, so the reader
-    // outlives any window and is never tied to one.
+    // The stream outlives any window and is never tied to one.
     let _reader = store.clone().spawn_reader(home, stream_path(SURFACE));
 
     let settings = nerve_windows_surface::settings::Settings::load(

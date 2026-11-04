@@ -3,7 +3,7 @@
 //!
 //! These run as layers rather than inside handlers so that a route added later
 //! cannot forget one, and so that they apply to the fallbacks too — Swift
-//! checks the peer in `respond` (`IngestServer.swift:129`), before it has
+//! checks the peer in `respond`, before it has
 //! looked at the request line at all.
 
 use std::net::SocketAddr;
@@ -16,13 +16,12 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
 
-/// The largest body the hub will read (`IngestServer.swift:100`).
+/// The largest body the hub will read.
 ///
 /// A body of exactly this size is accepted; one byte more is refused.
 pub(super) const MAX_BODY_BYTES: usize = 1024 * 1024;
 
-/// `Access-Control-Allow-Origin: *` on every response, whatever its status
-/// (`IngestServer.swift:333`).
+/// `Access-Control-Allow-Origin: *` on every response, whatever its status.
 ///
 /// The hub is loopback-only, so this opens nothing a browser could not already
 /// reach; it exists so a local page can read the job list without a proxy.
@@ -35,7 +34,7 @@ pub(super) async fn allow_any_origin(request: Request, next: Next) -> Response {
     response
 }
 
-/// Refuse anyone who is not on this machine (`IngestServer.swift:129`).
+/// Refuse anyone who is not on this machine.
 ///
 /// `IpAddr::is_loopback` is exactly Swift's rule: the whole `127.0.0.0/8` block
 /// for IPv4 and `::1` alone for IPv6.

@@ -20,7 +20,7 @@ pub struct Envelope {
 }
 
 impl Envelope {
-    /// Read a `POST /v1/snapshot` body (`IngestServer.swift:309`).
+    /// Read a `POST /v1/snapshot` body.
     ///
     /// Envelope or nothing — this route has no array fallback. An empty body is
     /// an empty envelope, which the alias guard then refuses.
@@ -31,7 +31,7 @@ impl Envelope {
         serde_json::from_slice(body)
     }
 
-    /// Read a `POST /v1/events` body (`IngestServer.swift:295`).
+    /// Read a `POST /v1/events` body.
     ///
     /// Three shapes, tried in this order: envelope, bare event array, single
     /// event. The order is load-bearing and lossy — **every** envelope field is

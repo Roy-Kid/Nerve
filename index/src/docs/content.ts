@@ -326,10 +326,6 @@ codex plugin add nerve@nerve`,
 node --test plugins/nerve/hooks/nerve.test.js
 cargo test -p nerve-hub hook`,
       },
-      {
-        type: 'p',
-        text: 'Prefer marketplace install over the legacy sources/agents/codex/hooks.json template.',
-      },
     ],
   },
   {
@@ -640,7 +636,7 @@ npm run watch`,
         items: [
           'It dismisses on focus loss or Escape. No taskbar button and no Alt-Tab entry \u2014 it is a glance, not a window to manage.',
           'Resize the panel to suit your display; its size is remembered next time. Escape, focus loss and Alt+F4 hide the panel. Use Quit in the tray menu to exit Nerve.',
-          'Hiding it never drops the stream. That connection is what keeps the hub alive, so it outlives any window.',
+          'Hiding it never drops the stream, so it outlives any window.',
           'Open takes you to the job; Copy puts its line on the clipboard. There is no approve, cancel or submit \u2014 Nerve never reverse-controls an agent.',
           'A job on another machine is never opened locally: the same path very likely exists here too, and opening the wrong one silently is worse than opening nothing. Its location is copied instead, and the panel says why.',
         ],
@@ -661,7 +657,7 @@ cargo install nerve-hub nerve-windows-surface`,
       },
       {
         type: 'p',
-        text: '-Install copies both binaries to %LOCALAPPDATA%\\Programs\\Nerve and creates the Start Menu shortcut. The Windows download includes this script and both executables, so installation does not require compiling. From a checkout, the script builds them first. To use binaries in another folder, add -BinaryDirectory C:\\path\\to\\binaries. Quit Nerve and other connected surfaces before upgrading or uninstalling, then allow the hub 30 seconds to stop. -Uninstall keeps your preferences.',
+        text: '-Install copies both binaries to %LOCALAPPDATA%\\Programs\\Nerve and creates the Start Menu shortcut. The Windows download includes this script and both executables, so installation does not require compiling. From a checkout, the script builds them first. To use binaries in another folder, add -BinaryDirectory C:\\path\\to\\binaries. Quit Nerve, its other surfaces and the hub before upgrading or uninstalling. -Uninstall keeps your preferences.',
       },
       {
         type: 'callout',
@@ -713,7 +709,7 @@ cargo install nerve-hub nerve-windows-surface`,
         items: [
           'The port is fixed and not configurable: binding 17890 is itself the single-instance lock, so there is no port field in Settings (only the endpoint, shown for copying) and no NERVE_* env to set.',
           'The app auto-spawns the nerve-hub binary bundled inside Nerve.app when nothing answers on the port, and attaches to the running hub otherwise.',
-          'The hub stays resident after all surfaces disconnect. nerve-hub ensure owns singleton discovery, detached startup and readiness. Subscription counts only describe delivery routes; tasks remain in memory until the hub is restarted.',
+          '所有界面断开后，hub 依然常驻。nerve-hub ensure 负责单例发现、后台启动与就绪检查。订阅数只描述投递路线；任务一直留在内存里，直到 hub 重启。',
           'Every surface — menu bar, tmux plugin, plain curl — reads the same frames, so status never depends on which one you have open.',
         ],
       },
@@ -898,7 +894,7 @@ cargo install nerve-hub nerve-windows-surface`,
       {
         type: 'callout',
         title: 'Resident hub lifecycle',
-        text: 'The hub stays resident after all surfaces disconnect. nerve-hub ensure owns singleton discovery, detached startup and readiness. Subscription counts only describe delivery routes; tasks remain in memory until the hub is restarted.',
+        text: '所有界面断开后，hub 依然常驻。nerve-hub ensure 负责单例发现、后台启动与就绪检查。订阅数只描述投递路线；任务一直留在内存里，直到 hub 重启。',
       },
       { type: 'h2', text: 'Action protocol (producers poll themselves)' },
       {
@@ -1064,10 +1060,6 @@ codex plugin add nerve@nerve`,
 node --test plugins/nerve/hooks/nerve.test.js
 cargo test -p nerve-hub hook`,
       },
-      {
-        type: 'p',
-        text: '请优先使用市场安装，而不是旧的 sources/agents/codex/hooks.json 模板。',
-      },
     ],
   };
 
@@ -1175,7 +1167,7 @@ run-shell ~/.tmux/plugins/nerve/surfaces/tmux/nerve.tmux`,
       type: 'table',
       headers: ['按键', '操作'],
       rows: [
-        ['prefix + e', '侧边栏循环：打开+聚焦 → 取消聚焦 → 关闭'],
+        ['prefix + e', '侧边栏循环：打开（聚焦）→ 取消聚焦 → 聚焦。自动创建的侧边栏不聚焦，新窗口不会打断你正在输入的地方'],
         ['j / k', '移动选择；右侧 pane 预览该任务'],
         ['Enter', '跳转到该任务的真实 session/window/pane'],
         ['h / l / Tab', '循环切换状态筛选器'],
@@ -1216,6 +1208,23 @@ run-shell ~/.tmux/plugins/nerve/surfaces/tmux/nerve.tmux`,
     {
       type: 'p',
       text: '每台机器运行自己的常驻单例 hub。本机 hub 通过 SSH LocalForward 连接远程 hub，先运行远程 nerve-hub ensure，再订阅仅本机任务的协议流；不会自动安装远程程序。断线保留快照并显示离线，重连全量替换。SSH 配置与连接由 hub 管理。',
+    },
+    {
+      type: 'p',
+      text: '另一台机器上报的任务在这台机器上没有 pane，所以它按你观察它的那个会话来匹配：正在 ssh 到那台主机的 pane。Enter 会跳到那里——这是「带我回到那个 agent」在本地最诚实的回答。匹配的是那个 ssh 指向 hub 到达该任务时所用的 ~/.ssh/config Host 的 pane（Arrhenius 上的任务对应 ssh Arrhenius），只比较这个名字：用登录节点自己的名字输入的 ssh arrhenius1 是另一个目的地。',
+    },
+    {
+      type: 'p',
+      text: '那个 pane 通往的是机器，不是任务：那台机器上的每个任务都解析到同一个 ssh 会话。所以把高亮移到远程任务上会同时做两件事——ssh pane 来到侧边栏旁边，那台机器的 tmux 被要求转到这个任务——这样一个共享会话显示的就是光标下的那一行，而不是它之前停留的内容。',
+    },
+    {
+      type: 'p',
+      text: 'Enter 做同样的事，并把你带过去：它聚焦 ssh pane，然后在那台机器上运行一条命令——同样的 pid → tty → pane 解析，再 select-window / select-pane——于是远端转到你选的任务，而不是它原本显示的内容。经由已建立的 ControlMaster，几百毫秒内完成；它从不阻塞侧边栏，从不询问密码（BatchMode），agent 不在那边的 tmux pane 里时什么也不做。如果那个远程 tmux 上连着不止一个客户端，会选中窗口但不拖动任何人的视图——你的和别人的无法区分。',
+    },
+    {
+      type: 'callout',
+      title: '远程 pid 从不在本地匹配',
+      text: '远程任务上的 pid 和工作区路径描述的是另一台机器的进程和文件系统，所以两者都不会与本地 pane 比较——这和 hub 在回收进程已消失的任务之前遵循的规则相同。',
     },
     { type: 'h2', text: '侧栏不发系统通知' },
     {
@@ -1262,6 +1271,10 @@ npm run watch`,
       type: 'p',
       text: '然后 Run and Debug → Run Nerve Extension（F5），或 ./scripts/nerve.sh --vscode。hub 端口固定为 127.0.0.1:17890；没有响应时扩展会像 tmux 一样拉起 nerve-hub，并且永远不会杀掉它。',
     },
+    { type: 'h2', text: 'Windows 动态插件（预览）' },
+    { type: 'p', text: 'surfaces/tether-web/package 是一个独立的 manifest 加 HTML/CSS/JavaScript 包。在带 web 宿主的 Windows 版 Tether 中，使用 设置 → 扩展 → 安装 web 插件，选择该包目录即可。无需重新编译，也不依赖任何 Swift 包。' },
+    { type: 'p', text: '请先安装 Windows 版 Nerve 配套程序；打开面板时，如有需要会自动启动它的 hub。web 界面通过宿主的只读网络能力读取完整帧，且仅限 http://127.0.0.1:17890。它没有终端、文件系统或 agent 控制权限。搜索、机器筛选、状态色带和可展开的任务详情实时更新；重连带退避。关闭插件会释放它的 SSE 订阅。' },
+    { type: 'p', text: '这个预览只做显示：离线时它请 Windows 宿主启动已安装的 hub，不发送系统通知。它的界面标签是 tether-web，所以已有的通知界面保持优先。每打开一个面板，Windows 宿主最多承载一条事件流。macOS 插件在「快速开始」中说明，位于 surfaces/tether。' },
     { type: 'h2', text: '你会看到什么' },
     {
       type: 'table',
@@ -1357,7 +1370,7 @@ const zhWindowsPage: DocPage = {
       type: 'ul',
       items: [
         '失去焦点或按 Esc 即消失。没有任务栏按钮，也不出现在 Alt-Tab 里——它是一瞥，不是需要管理的窗口。',
-        '隐藏面板绝不会断开数据流。那条连接正是让 hub 活着的东西，所以它比任何窗口活得久。',
+        '隐藏面板绝不会断开数据流，所以它比任何窗口活得久。',
         'Open 带你去那个任务，Copy 把它那一行放进剪贴板。没有 approve、cancel 或 submit——Nerve 从不反向控制 agent。',
         '别的机器上的任务绝不会在本地打开：同样的路径在这台机器上很可能也存在，静默打开错误的那个比什么都不打开更糟。它会改为复制位置，并告诉你为什么。',
       ],
@@ -1375,7 +1388,7 @@ cargo install nerve-hub nerve-windows-surface`,
     },
     {
       type: 'p',
-      text: '-Install 会把两个二进制复制到 %LOCALAPPDATA%\\Programs\\Nerve 并创建开始菜单快捷方式。这个快捷方式不是装饰：它携带 AppUserModelID，而那正是未打包应用能以自己的名义弹出系统通知的前提。cargo install 没有快捷方式，因此也没有系统通知。',
+      text: '-Install 会把两个二进制复制到 %LOCALAPPDATA%\\Programs\\Nerve 并创建开始菜单快捷方式。Windows 下载包含这个脚本和两个可执行文件，所以安装无需编译；在源码目录中，脚本会先构建它们。要使用其他目录里的二进制，加上 -BinaryDirectory C:\\path\\to\\binaries。升级或卸载前，请退出 Nerve、它的其他界面以及 hub。-Uninstall 会保留你的偏好设置。',
     },
     {
       type: 'callout',
@@ -1428,7 +1441,7 @@ const zhStatusPage: DocPage = {
       items: [
         '端口固定且不可配置：绑定 17890 本身就是单实例锁，因此设置中没有端口字段（只显示可复制的 endpoint），也没有要设置的 NERVE_* env。',
         '当端口没有响应时，应用会自动启动 Nerve.app 中捆绑的 nerve-hub binary；否则就连接已运行的 hub。',
-        'The hub stays resident after all surfaces disconnect. nerve-hub ensure owns singleton discovery, detached startup and readiness. Subscription counts only describe delivery routes; tasks remain in memory until the hub is restarted.',
+        '所有界面断开后，hub 依然常驻。nerve-hub ensure 负责单例发现、后台启动与就绪检查。订阅数只描述投递路线；任务一直留在内存里，直到 hub 重启。',
         '每个 surface——菜单栏、tmux 插件、普通 curl——都读取同一份 frame，因此状态永远不依赖你打开了哪一个 surface。',
       ],
     },
@@ -1613,8 +1626,8 @@ const zhIngestPage: DocPage = {
     },
     {
       type: 'callout',
-      title: 'Stream 就是生命周期',
-      text: 'The hub stays resident after all surfaces disconnect. nerve-hub ensure owns singleton discovery, detached startup and readiness. Subscription counts only describe delivery routes; tasks remain in memory until the hub is restarted.',
+      title: '常驻 hub 的生命周期',
+      text: '所有界面断开后，hub 依然常驻。nerve-hub ensure 负责单例发现、后台启动与就绪检查。订阅数只描述投递路线；任务一直留在内存里，直到 hub 重启。',
     },
     { type: 'h2', text: 'Action 协议（producer 自行轮询）' },
     {

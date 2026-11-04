@@ -1,6 +1,6 @@
 //! The loopback HTTP surface: what producers POST and what surfaces GET.
 //!
-//! Ported from `Nerve/Nerve/Ingest/IngestServer.swift`. Handlers decode a body,
+//! Ported from the app's former `IngestServer.swift`. Handlers decode a body,
 //! call the store, and answer `(StatusCode, Json)` — they never panic, never
 //! answer 5xx, and never derive display state.
 //!

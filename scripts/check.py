@@ -8,7 +8,6 @@ commit.
 """
 import argparse
 import glob
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -32,6 +31,9 @@ def macos() -> None:
     # target never compiles; checking it costs no Windows machine.
     run("cargo", "check", *PORTABLE, "--all-targets", "--all-features", "--target", "x86_64-pc-windows-msvc")
     run(sys.executable, "sources/agents/tests/test_nerve_hook.py")
+    run(sys.executable, "sources/agents/tests/test_hook_slots.py")
+    run("node", "--test", "plugins/nerve/hooks/nerve.test.js")
+    run(sys.executable, "scripts/check-plugin.py")
     run("npm", "ci", cwd=ROOT / "vsc-ext")
     run("npm", "test", cwd=ROOT / "vsc-ext")
     run("node", "--test", *sorted(glob.glob(str(ROOT / "surfaces/tether-web/tests/*.test.mjs"))))
