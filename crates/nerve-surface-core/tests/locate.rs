@@ -7,8 +7,8 @@
 //!
 //! That rule is the same on every platform, so the bulk of this file injects
 //! its own directory list through `with_fixed_directories` and never names a
-//! real one. Two small tests at the end pin what each platform actually
-//! searches; they are the only part that knows an OS.
+//! real one. One small test at the end pins what a Unix actually searches;
+//! it is the only part that knows an OS.
 //!
 //! Determinism: a fake probe over a literal path set, an injected home, no
 //! filesystem, no `PATH`, no clock, no socket.
@@ -17,7 +17,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use nerve_surface_core::locate::{BINARY, BinaryProbe, HubLocator, platform_fixed_directories};
+use nerve_surface_core::locate::{BINARY, BinaryProbe, HubLocator};
 
 const HOME: &str = "/Users/tester";
 
@@ -131,6 +131,8 @@ fn test_a_hit_stops_the_search() {
 #[cfg(unix)]
 #[test]
 fn test_unix_searches_both_homebrew_prefixes_in_order() {
+    use nerve_surface_core::locate::platform_fixed_directories;
+
     assert_eq!(
         platform_fixed_directories(),
         vec![
