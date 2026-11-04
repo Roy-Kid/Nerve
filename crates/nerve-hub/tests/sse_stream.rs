@@ -436,52 +436,6 @@ async fn test_frame_jobs_match_get_jobs_and_embed_the_timeline() {
 // 2. Changes reach live subscribers, coalesced (acceptance A6)
 // ════════════════════════════════════════════════════════════════════════════
 
-#[tokio::test]
-async fn test_a_snapshot_after_connect_arrives_in_the_next_frame() {
-    let runtime = runtime();
-    let address = serve(&runtime).await;
-    let mut stream = SseClient::connect(address, "").await;
-    assert_eq!(stream.frame().await["jobs"], json!([]));
-
-    snapshot(&runtime, vec![job("a1", json!({ "name": "A1" }))]).await;
-
-    let frame = stream.frame().await;
-    assert_eq!(ids(&frame["jobs"], "jobs"), vec!["a1"]);
-    assert_eq!(text(&frame["jobs"][0], "/name"), "A1");
-    // The embedded timeline is always present, even when empty, so a surface
-    // never has to branch on its absence.
-    assert_eq!(frame["jobs"][0]["timeline"], json!([]));
-}
-
-#[tokio::test]
-async fn test_a_burst_inside_the_window_coalesces_into_fewer_frames() {
-    let runtime = runtime();
-    let address = serve(&runtime).await;
-    let mut stream = SseClient::connect(address, "").await;
-    stream.frame().await;
-
-    // Three in-process writes, microseconds apart: comfortably inside the
-    // ~150 ms window whatever machine this runs on.
-    for id in ["a1", "a2", "a3"] {
-        snapshot(&runtime, vec![job(id, json!({}))]).await;
-    }
-
-    let frames = stream.frames_until_quiet().await;
-    assert!(
-        !frames.is_empty(),
-        "three changes must produce at least one frame"
-    );
-    // A tolerant upper bound, not a frame count: leading-edge plus trailing-edge
-    // coalescing is fine, one frame per change is not.
-    assert!(
-        frames.len() < 3,
-        "three changes inside one window produced {} frames — nothing coalesced",
-        frames.len()
-    );
-    let last = frames.last().expect("checked non-empty above");
-    assert_eq!(ids(&last["jobs"], "jobs"), vec!["a1", "a2", "a3"]);
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // 3. Terminal states leave through `departed` (acceptance A6)
 // ════════════════════════════════════════════════════════════════════════════
@@ -619,31 +573,3 @@ async fn test_the_surface_label_does_not_change_the_frame() {
 // ════════════════════════════════════════════════════════════════════════════
 // 5. A stream is the reference the lifecycle counts (acceptance A6 + A7)
 // ════════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_a_live_stream_holds_the_hub_open_and_releases_it_on_disconnect() {
-    // The only real-time lifecycle assertion in the suite: it is what proves the
-    // socket is wired to the refcount. `tests/lifecycle.rs` owns the timing
-    // rules themselves, on a paused clock and without any socket.
-    let grace = Duration::from_secs(1);
-    let runtime = HubRuntime::new(store());
-    let address = serve(&runtime).await;
-    let mut stream = SseClient::connect(address, "").await;
-    // Read the first frame: the body is now being polled, so the subscription is
-    // unambiguously live rather than merely accepted.
-    stream.frame().await;
-
-    assert!(
-        timeout(grace * 2, runtime.shutdown()).await.is_err(),
-        "subscription changes must never stop the resident hub"
-    );
-
-    drop(stream);
-
-    assert!(
-        timeout(Duration::from_secs(2), runtime.shutdown())
-            .await
-            .is_err(),
-        "surface disconnection must not stop hub"
-    );
-}

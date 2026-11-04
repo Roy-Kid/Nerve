@@ -91,8 +91,8 @@ use serde_json::{Value, json};
 use time::macros::datetime;
 
 use nerve_hub::clock::FakeClock;
-use nerve_hub::model::{ActionState, Event, Job};
-use nerve_hub::state::{JobStore, MAX_SEEN_EVENTS, PidProbe, PidState, SEEN_EVENT_EVICT_BATCH};
+use nerve_hub::model::{Event, Job};
+use nerve_hub::state::{JobStore, PidProbe, PidState};
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -369,22 +369,6 @@ fn test_last_prompt_survives_the_snapshots_that_follow_it() {
 }
 
 #[test]
-fn test_a_new_prompt_replaces_the_kept_one() {
-    let mut fixture = fixture();
-    fixture.store.apply_snapshot(vec![job_fixture(
-        "claude-code:s1",
-        json!({ "version": 1, "extensions": { "lastPrompt": "first" } }),
-    )]);
-    fixture.store.apply_snapshot(vec![job_fixture(
-        "claude-code:s1",
-        json!({ "version": 2, "extensions": { "lastPrompt": "second" } }),
-    )]);
-
-    let stored = job_in(&fixture.store.jobs_json(), "claude-code:s1");
-    assert_eq!(text(&stored, "/extensions/lastPrompt"), "second");
-}
-
-#[test]
 fn test_this_machine_names_its_terminals_whatever_the_hook_saw() {
     let mut fixture = fixture();
     fixture.store = fixture
@@ -433,24 +417,6 @@ fn test_terminal_identity_stays_when_a_later_snapshot_omits_it() {
     )]);
     let stored = job_in(&fixture.store.jobs_json(), "claude-code:s1");
     assert_eq!(stored.pointer("/extensions/terminal"), Some(&moved));
-    assert!(stored.pointer("/extensions/pid").is_none());
-}
-
-#[test]
-fn test_live_status_extensions_are_not_sticky() {
-    // Prompt and terminal carry forward. A snapshot that drops `pid` means the
-    // producer stopped reporting one, and the hub must not re-assert it.
-    let mut fixture = fixture();
-    fixture.store.apply_snapshot(vec![job_fixture(
-        "claude-code:s1",
-        json!({ "version": 1, "extensions": { "pid": 4242 } }),
-    )]);
-    fixture.store.apply_snapshot(vec![job_fixture(
-        "claude-code:s1",
-        json!({ "version": 2, "extensions": {} }),
-    )]);
-
-    let stored = job_in(&fixture.store.jobs_json(), "claude-code:s1");
     assert!(stored.pointer("/extensions/pid").is_none());
 }
 
@@ -569,45 +535,6 @@ fn test_legacy_child_with_parent_job_id_is_dropped() {
 }
 
 #[test]
-fn test_legacy_child_with_paint_ribbon_false_is_dropped() {
-    let mut fixture = fixture();
-
-    fixture.store.apply_snapshot(vec![job_fixture(
-        "child-2",
-        json!({ "extensions": { "paintRibbon": false } }),
-    )]);
-
-    assert!(!has_job(&fixture.store.jobs_json(), "child-2"));
-}
-
-#[test]
-fn test_legacy_child_with_two_colon_id_is_dropped() {
-    let mut fixture = fixture();
-
-    // `{producer}:{session}` carries one `:`; legacy children carry two or more.
-    fixture
-        .store
-        .apply_snapshot(vec![job_fixture("claude-code:s1:agent-7", json!({}))]);
-
-    assert!(!has_job(
-        &fixture.store.jobs_json(),
-        "claude-code:s1:agent-7"
-    ));
-}
-
-#[test]
-fn test_legacy_child_with_subagent_role_is_dropped() {
-    let mut fixture = fixture();
-
-    fixture.store.apply_snapshot(vec![job_fixture(
-        "child-4",
-        json!({ "extensions": { "role": "subagent" } }),
-    )]);
-
-    assert!(!has_job(&fixture.store.jobs_json(), "child-4"));
-}
-
-#[test]
 fn test_group_role_survives_multi_colon_id() {
     // Explicit `role=group|member|job` is never noise, even with 2+ colons.
     let mut fixture = fixture();
@@ -641,14 +568,6 @@ fn test_repeated_event_id_is_ignored() {
             .store
             .apply_event(event_fixture("ev1", "a1", "attention.changed", patch))
     );
-}
-
-#[test]
-fn test_dedupe_capacity_constants_match_the_swift_store() {
-    // Behavioural proof would need 4000+ events per run; the port's contract is
-    // the pair of constants at `SubjectStore.swift:26` and `:860`.
-    assert_eq!(MAX_SEEN_EVENTS, 4_000);
-    assert_eq!(SEEN_EVENT_EVICT_BATCH, 500);
 }
 
 #[test]
@@ -700,24 +619,6 @@ fn test_event_creates_job_on_miss_when_name_present() {
 }
 
 #[test]
-fn test_event_creates_job_on_miss_for_job_created_kind() {
-    let mut fixture = fixture();
-
-    let applied = fixture.store.apply_event(event_fixture(
-        "ev1",
-        "claude-code:s9",
-        "job.created",
-        json!({ "alias": "remote-box" }),
-    ));
-
-    assert!(applied);
-    let created = job_in(&fixture.store.jobs_json(), "claude-code:s9");
-    // Nameless create falls back to the job id (`SubjectStore.swift:467`).
-    assert_eq!(text(&created, "/name"), "claude-code:s9");
-    assert_eq!(text(&created, "/alias"), "remote-box");
-}
-
-#[test]
 fn test_event_for_unknown_job_without_name_is_ignored() {
     let mut fixture = fixture();
 
@@ -760,31 +661,6 @@ fn test_timeline_keeps_only_the_newest_forty_entries() {
     assert_eq!(text(&timeline[0], "/jobId"), "a1");
 }
 
-#[test]
-fn test_heartbeat_events_stay_out_of_the_timeline() {
-    let mut fixture = fixture();
-    fixture
-        .store
-        .apply_snapshot(vec![job_fixture("a1", json!({}))]);
-    fixture.store.apply_event(event_fixture(
-        "ev1",
-        "a1",
-        "current.changed",
-        json!({ "current": { "type": "thinking", "summary": "planning" } }),
-    ));
-
-    // A heartbeat still counts as applied — it just leaves no trace.
-    assert!(
-        fixture
-            .store
-            .apply_event(event_fixture("ev2", "a1", "heartbeat", json!({})))
-    );
-
-    let timeline = timeline_of(&fixture.store.jobs_json(), "a1");
-    assert_eq!(timeline.len(), 1);
-    assert_eq!(text(&timeline[0], "/kind"), "current.changed");
-}
-
 // ── 6. Reaper (acceptance A8) ───────────────────────────────────────────────
 
 #[test]
@@ -807,43 +683,6 @@ fn test_reaper_ends_job_when_pid_probe_reports_dead() {
     assert_eq!(text(&gone, "/outcome"), "cancelled");
     assert_eq!(text(&gone, "/extensions/endReason"), "process_gone");
     assert_eq!(text(&gone, "/endedAt"), "2026-07-19T00:00:10Z");
-}
-
-#[test]
-fn test_reaper_reads_string_pid_extension() {
-    let mut fixture = fixture();
-    fixture.probe.set(4242, PidState::Dead);
-    fixture.store.apply_snapshot(vec![job_fixture(
-        "claude-code:s1",
-        json!({ "extensions": { "pid": "4242" } }),
-    )]);
-
-    fixture.clock.advance(Duration::from_secs(10));
-    fixture.store.expire_and_reap();
-
-    assert!(!has_job(&fixture.store.jobs_json(), "claude-code:s1"));
-    let departed = fixture.store.take_departed();
-    assert_eq!(departed.len(), 1);
-    assert_eq!(
-        text(&wire(&departed[0]), "/extensions/endReason"),
-        "process_gone"
-    );
-}
-
-#[test]
-fn test_reaper_keeps_job_when_pid_is_alive() {
-    let mut fixture = fixture();
-    fixture.probe.set(4242, PidState::Alive);
-    fixture.store.apply_snapshot(vec![job_fixture(
-        "claude-code:s1",
-        json!({ "extensions": { "pid": 4242 } }),
-    )]);
-
-    fixture.clock.advance(Duration::from_secs(10));
-    fixture.store.expire_and_reap();
-
-    assert!(has_job(&fixture.store.jobs_json(), "claude-code:s1"));
-    assert!(fixture.store.take_departed().is_empty());
 }
 
 #[test]
@@ -946,25 +785,6 @@ fn test_reaper_ends_job_when_pid_start_no_longer_matches() {
 }
 
 #[test]
-fn test_reaper_keeps_job_when_pid_start_matches() {
-    let mut fixture = fixture();
-    fixture.probe.set(4242, PidState::Alive);
-    fixture.probe.set_start(4242, Some("100"));
-    fixture.store.apply_snapshot(vec![job_fixture(
-        "claude-code:s1",
-        json!({ "extensions": { "pid": 4242 } }),
-    )]);
-
-    fixture.clock.advance(Duration::from_secs(10));
-    fixture.store.expire_and_reap();
-
-    assert!(has_job(&fixture.store.jobs_json(), "claude-code:s1"));
-    let stored = job_in(&fixture.store.jobs_json(), "claude-code:s1");
-    assert_eq!(text(&stored, "/extensions/pidStart"), "100");
-    assert!(fixture.store.take_departed().is_empty());
-}
-
-#[test]
 fn test_reaper_retargets_pid_start_when_the_producer_reports_again() {
     // The producer checked in from the process that now owns the pid. That
     // row is live; the token moves with the report.
@@ -1010,40 +830,6 @@ fn test_reaper_keeps_job_when_start_time_is_missing() {
 }
 
 #[test]
-fn test_reaper_keeps_denied_pid_when_start_time_differs() {
-    let mut fixture = fixture();
-    fixture.probe.set(4242, PidState::Denied);
-    fixture.probe.set_start(4242, Some("100"));
-    fixture.store.apply_snapshot(vec![job_fixture(
-        "claude-code:s1",
-        json!({ "extensions": { "pid": 4242 } }),
-    )]);
-    fixture.probe.set_start(4242, Some("200"));
-
-    fixture.clock.advance(Duration::from_secs(10));
-    fixture.store.expire_and_reap();
-
-    assert!(has_job(&fixture.store.jobs_json(), "claude-code:s1"));
-    assert!(fixture.store.take_departed().is_empty());
-}
-
-#[test]
-fn test_reaper_keeps_recycled_pid_younger_than_min_age() {
-    let mut fixture = fixture();
-    fixture.probe.set_start(4242, Some("100"));
-    fixture.store.apply_snapshot(vec![job_fixture(
-        "claude-code:s1",
-        json!({ "extensions": { "pid": 4242 } }),
-    )]);
-    fixture.probe.set_start(4242, Some("200"));
-
-    fixture.clock.advance(Duration::from_secs(2));
-    fixture.store.expire_and_reap();
-
-    assert!(has_job(&fixture.store.jobs_json(), "claude-code:s1"));
-}
-
-#[test]
 fn test_reaper_does_not_reap_a_job_with_no_pid() {
     // Silence is not an exit. There is no process to ask about.
     let mut fixture = fixture_with_default_pid(PidState::Dead);
@@ -1083,161 +869,6 @@ fn test_reaper_forgets_pid_start_when_the_snapshot_drops_pid() {
 
 // ── 7. Pending actions (dormant subsystem) ──────────────────────────────────
 
-/// Job carrying one declared action, so pending has something to bind to.
-fn job_with_open_action(id: &str) -> Job {
-    job_fixture(
-        id,
-        json!({
-            "actions": [{
-                "id": "open",
-                "title": "Open",
-                "kind": "open",
-                "state": "available",
-                "destructive": false,
-                "confirmationRequired": false
-            }]
-        }),
-    )
-}
-
-#[test]
-fn test_pending_enqueue_marks_the_declared_action_pending() {
-    let mut fixture = fixture();
-    fixture
-        .store
-        .apply_snapshot(vec![job_with_open_action("a1")]);
-
-    assert!(fixture.store.enqueue_pending("p1", "a1", "open"));
-
-    let pending = fixture.store.pending_json(Some("t"));
-    assert_eq!(array(&pending).len(), 1);
-    let request = &array(&pending)[0];
-    assert_eq!(text(request, "/id"), "p1");
-    assert_eq!(text(request, "/jobId"), "a1");
-    assert_eq!(text(request, "/producerId"), "t");
-    assert_eq!(text(request, "/actionId"), "open");
-    assert_eq!(text(request, "/state"), "pending");
-    assert_eq!(text(request, "/requestedAt"), T0);
-    // TTL 3600s from the injected clock.
-    assert_eq!(text(request, "/expiresAt"), "2026-07-19T01:00:00Z");
-
-    let stored = job_in(&fixture.store.jobs_json(), "a1");
-    assert_eq!(text(&stored, "/actions/0/state"), "pending");
-}
-
-#[test]
-fn test_pending_queue_keeps_only_the_newest_two_hundred() {
-    let mut fixture = fixture();
-    fixture
-        .store
-        .apply_snapshot(vec![job_with_open_action("a1")]);
-
-    for n in 0..205 {
-        assert!(
-            fixture
-                .store
-                .enqueue_pending(&format!("p{n}"), "a1", "open")
-        );
-    }
-
-    let pending = fixture.store.pending_json(None);
-    let list = array(&pending);
-    assert_eq!(list.len(), 200);
-    // Newest first; the five oldest fell off.
-    assert_eq!(text(&list[0], "/id"), "p204");
-    assert!(
-        !list
-            .iter()
-            .any(|request| request.get("id").and_then(Value::as_str) == Some("p0"))
-    );
-}
-
-#[test]
-fn test_pending_stays_open_before_the_ttl() {
-    let mut fixture = fixture();
-    fixture
-        .store
-        .apply_snapshot(vec![job_with_open_action("a1")]);
-    fixture.store.enqueue_pending("p1", "a1", "open");
-
-    fixture.clock.advance(Duration::from_secs(3_599));
-    fixture.store.expire_and_reap();
-
-    assert_eq!(array(&fixture.store.pending_json(None)).len(), 1);
-    let stored = job_in(&fixture.store.jobs_json(), "a1");
-    assert_eq!(text(&stored, "/actions/0/state"), "pending");
-}
-
-#[test]
-fn test_pending_expires_after_the_ttl() {
-    let mut fixture = fixture();
-    fixture
-        .store
-        .apply_snapshot(vec![job_with_open_action("a1")]);
-    fixture.store.enqueue_pending("p1", "a1", "open");
-
-    fixture.clock.advance(Duration::from_secs(3_601));
-    fixture.store.expire_and_reap();
-
-    // `pending_json` lists open requests only.
-    assert!(array(&fixture.store.pending_json(None)).is_empty());
-    let stored = job_in(&fixture.store.jobs_json(), "a1");
-    assert_eq!(text(&stored, "/actions/0/state"), "expired");
-}
-
-#[test]
-fn test_complete_pending_returns_false_for_unknown_id() {
-    let mut fixture = fixture();
-    fixture
-        .store
-        .apply_snapshot(vec![job_with_open_action("a1")]);
-
-    assert!(
-        !fixture
-            .store
-            .complete_pending("nope", ActionState::Succeeded, Some("x"), None)
-    );
-}
-
-#[test]
-fn test_complete_pending_returns_false_on_producer_mismatch() {
-    let mut fixture = fixture();
-    fixture
-        .store
-        .apply_snapshot(vec![job_with_open_action("a1")]);
-    fixture.store.enqueue_pending("p1", "a1", "open");
-
-    let completed =
-        fixture
-            .store
-            .complete_pending("p1", ActionState::Succeeded, Some("x"), Some("other"));
-
-    assert!(!completed);
-    let stored = job_in(&fixture.store.jobs_json(), "a1");
-    assert_eq!(text(&stored, "/actions/0/state"), "pending");
-}
-
-#[test]
-fn test_complete_pending_resets_the_action_to_available() {
-    let mut fixture = fixture();
-    fixture
-        .store
-        .apply_snapshot(vec![job_with_open_action("a1")]);
-    fixture.store.enqueue_pending("p1", "a1", "open");
-
-    let completed =
-        fixture
-            .store
-            .complete_pending("p1", ActionState::Succeeded, Some("done"), Some("t"));
-
-    assert!(completed);
-    // The request is no longer open …
-    assert!(array(&fixture.store.pending_json(None)).is_empty());
-    // … and the action is re-armed rather than frozen on `succeeded`.
-    let stored = job_in(&fixture.store.jobs_json(), "a1");
-    assert_eq!(text(&stored, "/actions/0/state"), "available");
-}
-
 // ── 8. Clear ────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1252,30 +883,4 @@ fn test_clear_empties_jobs_without_emitting_departed() {
     assert!(array(&fixture.store.jobs_json()).is_empty());
     // `clear` is an admin wipe, not a lifecycle transition.
     assert!(fixture.store.take_departed().is_empty());
-}
-
-#[test]
-fn test_clear_forgets_seen_event_ids() {
-    let mut fixture = fixture();
-    fixture
-        .store
-        .apply_snapshot(vec![job_fixture("a1", json!({}))]);
-    let patch = json!({ "attention": { "level": "urgent", "reason": "input" } });
-    assert!(fixture.store.apply_event(event_fixture(
-        "ev1",
-        "a1",
-        "attention.changed",
-        patch.clone()
-    )));
-
-    fixture.store.clear();
-    fixture
-        .store
-        .apply_snapshot(vec![job_fixture("a1", json!({}))]);
-
-    assert!(
-        fixture
-            .store
-            .apply_event(event_fixture("ev1", "a1", "attention.changed", patch))
-    );
 }

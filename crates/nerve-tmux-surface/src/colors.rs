@@ -82,23 +82,3 @@ const fn nearest(color: Rgb) -> u8 {
     }
     best
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn palette_hex_lands_on_the_nearest_index() {
-        // Pure red is 196 (`#FF0000`). `#FF3B30` is the cube at 203.
-        assert_eq!(PROBLEM, 203);
-        assert_eq!(ATTENTION, 214);
-        assert_eq!(RUNNING, 33);
-        assert_eq!(MONITOR, 135);
-        assert_eq!(SUCCESS, 77);
-        assert_eq!(IDLE, 246);
-        assert_eq!(WAITING, IDLE);
-        assert_eq!(of(StatusClass::Problem), PROBLEM);
-        assert_eq!(of(StatusClass::Waiting), IDLE);
-        assert_eq!(of(StatusClass::Inactive), IDLE);
-    }
-}

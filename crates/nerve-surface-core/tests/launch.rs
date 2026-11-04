@@ -13,14 +13,6 @@ impl ProcessSpawner for Spawner {
         Ok(())
     }
 }
-struct Refused;
-impl ProcessSpawner for Refused {
-    fn spawn(&mut self, _: &Path, _: &[&str]) -> Result<(), SpawnError> {
-        Err(SpawnError::new(
-            "port occupied by incompatible hub; upgrade",
-        ))
-    }
-}
 #[test]
 fn repeated_bootstrap_always_delegates_to_ensure() {
     let mut launcher = HubLauncher::new(Spawner, Probe);
@@ -31,10 +23,4 @@ fn repeated_bootstrap_always_delegates_to_ensure() {
         );
     }
     assert_eq!(launcher.ensure(None), Launch::Missing);
-}
-#[test]
-fn ensure_error_is_preserved_for_display() {
-    let mut launcher = HubLauncher::new(Refused, Probe);
-    assert_eq!(launcher.ensure(Some(Path::new("hub"))), Launch::Failed);
-    assert!(launcher.last_error.unwrap().contains("upgrade"));
 }

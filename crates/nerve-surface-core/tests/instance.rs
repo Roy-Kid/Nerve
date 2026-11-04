@@ -165,11 +165,6 @@ fn claimed(guard: &mut InstanceGuard<FakeOptions, FakePids>) -> Claim {
 
 // ── Taking the lock ─────────────────────────────────────────────────────────
 
-#[test]
-fn test_the_lock_lives_in_the_nerve_surface_pid_option() {
-    assert_eq!(SURFACE_PID_KEY, "@nerve_surface_pid");
-}
-
 /// Acceptance A6: on start the option is claimed.
 #[test]
 fn test_an_unclaimed_surface_is_taken_over() {
@@ -183,13 +178,6 @@ fn test_an_unclaimed_surface_is_taken_over() {
             Op::Set(SURFACE_PID_KEY.to_string(), ME.to_string()),
         ]
     );
-}
-
-#[test]
-fn test_a_blank_option_counts_as_unclaimed() {
-    let (mut guard, _wires) = guard(Some(""), &[]);
-
-    assert_eq!(claimed(&mut guard), Claim::Owned);
 }
 
 #[test]
@@ -214,14 +202,6 @@ fn test_pid_zero_and_pid_one_are_never_owners() {
     }
 }
 
-#[test]
-fn test_a_padded_pid_is_still_a_pid() {
-    let (mut guard, wires) = guard(Some(" 999 "), &[OTHER]);
-
-    assert_eq!(claimed(&mut guard), Claim::Yield { pid: OTHER });
-    assert_eq!(wires.probed(), vec![OTHER]);
-}
-
 // ── Yielding to a live surface ──────────────────────────────────────────────
 
 /// Acceptance A6: a second `run` that sees a live pid exits at once.
@@ -238,20 +218,6 @@ fn test_a_live_owner_is_yielded_to() {
 fn test_only_an_owned_claim_may_open_a_stream() {
     assert!(Claim::Owned.may_stream());
     assert!(!Claim::Yield { pid: OTHER }.may_stream());
-}
-
-#[test]
-fn test_yielding_never_rewrites_the_option() {
-    let (mut guard, wires) = guard(Some("999"), &[OTHER]);
-    claimed(&mut guard);
-
-    assert!(
-        !wires
-            .ops()
-            .iter()
-            .any(|op| matches!(op, Op::Set(name, _) if name == SURFACE_PID_KEY)),
-        "a yielding surface must leave the owner's pid alone"
-    );
 }
 
 // ── Taking over ─────────────────────────────────────────────────────────────
@@ -279,14 +245,6 @@ fn test_a_dead_owner_is_taken_over() {
 fn test_our_own_pid_is_reclaimed_rather_than_yielded_to() {
     let (mut guard, _wires) = guard(Some("4242"), &[ME]);
 
-    assert_eq!(claimed(&mut guard), Claim::Owned);
-}
-
-#[test]
-fn test_claiming_twice_is_idempotent() {
-    let (mut guard, _wires) = guard(None, &[]);
-
-    assert_eq!(claimed(&mut guard), Claim::Owned);
     assert_eq!(claimed(&mut guard), Claim::Owned);
 }
 

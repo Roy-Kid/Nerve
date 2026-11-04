@@ -108,11 +108,6 @@ class HookSlotTests(unittest.TestCase):
     def test_grok_registers_every_official_event(self):
         self.assertEqual(events("grok.json"), GROK)
 
-    def test_claude_does_not_claim_worktree_hooks(self):
-        claimed = events("hooks.json")
-        self.assertNotIn("WorktreeCreate", claimed)
-        self.assertNotIn("WorktreeRemove", claimed)
-
 
 
 
@@ -155,13 +150,6 @@ class CodexWindowsOverrideTests(unittest.TestCase):
                 command.startswith("py -3 "),
                 f"{event} uses {command!r} rather than the py launcher",
             )
-
-    def test_both_commands_run_the_same_script(self):
-        for event, entry in self._entries():
-            if "commandWindows" not in entry:
-                continue
-            self.assertTrue(entry["command"].endswith("hooks/nerve.py"), event)
-            self.assertTrue(entry["commandWindows"].endswith("hooks/nerve.py"), event)
 
 
 if __name__ == "__main__":

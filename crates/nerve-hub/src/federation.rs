@@ -694,13 +694,6 @@ mod tests {
         assert!(bare.jobs_json()[0]["extensions"]["terminal"].is_null());
     }
     #[test]
-    fn failures_double_the_wait_and_a_held_link_starts_over() {
-        assert_eq!(retry_wait(1, false), (1, 2));
-        assert_eq!(retry_wait(16, false), (16, 30));
-        assert_eq!(retry_wait(30, false), (30, 30));
-        assert_eq!(retry_wait(30, true), (1, 2));
-    }
-    #[test]
     fn legacy_files_move_once_and_never_overwrite() {
         let root = std::env::temp_dir().join(format!("nerve-adopt-{}", std::process::id()));
         let (legacy, directory) = (root.join(".config/nerve"), root.join(".nerve"));

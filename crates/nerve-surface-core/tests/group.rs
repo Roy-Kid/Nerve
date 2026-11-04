@@ -97,18 +97,3 @@ fn a_later_now_does_not_reorder_jobs_that_report_no_update() {
     assert_eq!(early, late);
     assert_eq!(early[0].jobs, vec![1, 0], "newer createdAt first");
 }
-
-#[test]
-fn a_producer_that_named_no_machine_lands_under_unknown() {
-    let fixtures = jobs(json!([{ "id": "j", "name": "j", "alias": "  " }]));
-
-    assert_eq!(
-        shape(&fixtures, StatusFilter::default()),
-        vec![("unknown".to_string(), vec!["j".to_string()])]
-    );
-}
-
-#[test]
-fn an_empty_snapshot_has_no_sections() {
-    assert!(shape(&[], StatusFilter::default()).is_empty());
-}

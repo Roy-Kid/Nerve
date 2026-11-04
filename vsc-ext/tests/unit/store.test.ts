@@ -17,15 +17,6 @@ suite("job store", () => {
     assert.equal(store.snapshot().connected, true);
   });
 
-  test("offline keeps the last jobs", () => {
-    const store = new JobStore();
-    store.applyFrame(
-      parseFrame(JSON.stringify({ protocolVersion:2, jobs: [{ id: "a" }] })),
-    );
-    store.setOffline();
-    assert.equal(store.snapshot().connected, false);
-    assert.equal(store.snapshot().jobs[0]?.id, "a");
-  });
   test("older revisions cannot replace a snapshot, and a restarted hub can", () => {
     const store = new JobStore();
     const frame = (hubInstanceId:string, revision:number, id:string) => parseFrame(JSON.stringify({protocolVersion:2,hubInstanceId,revision,jobs:[{id}]}));

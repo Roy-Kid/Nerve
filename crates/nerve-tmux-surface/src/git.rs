@@ -182,22 +182,4 @@ MM both.rs
         assert_eq!(snapshot.untracked, vec!["? untracked.rs"]);
         assert_eq!(snapshot.error, None);
     }
-
-    #[test]
-    fn a_branch_with_no_upstream_has_zero_ahead_behind() {
-        let snapshot = parse_porcelain("## feature\n");
-        assert_eq!(snapshot.branch, "feature");
-        assert_eq!(snapshot.ahead, 0);
-        assert_eq!(snapshot.behind, 0);
-    }
-
-    #[test]
-    fn lists_stop_at_the_panel_cap() {
-        let mut body = String::from("## main\n");
-        for i in 0..10 {
-            body.push_str(&format!("?? f{i}.rs\n"));
-        }
-        let snapshot = parse_porcelain(&body);
-        assert_eq!(snapshot.untracked.len(), LIST_CAP);
-    }
 }

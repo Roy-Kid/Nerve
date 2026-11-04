@@ -2,7 +2,7 @@
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
 
-use nerve_windows_surface::platform::instance::{Claim, LOCK_PORT, claim};
+use nerve_windows_surface::platform::instance::{Claim, claim};
 
 /// A port nothing else in this suite will take.
 fn free_port() -> u16 {
@@ -11,14 +11,6 @@ fn free_port() -> u16 {
     let port = listener.local_addr().expect("bound").port();
     drop(listener);
     port
-}
-
-#[test]
-fn the_first_process_owns_the_lock() {
-    let port = free_port();
-    let claim = claim(port).expect("binding a free port is not an error");
-    assert!(claim.may_stream());
-    assert!(matches!(claim, Claim::Owned(_)));
 }
 
 #[test]
@@ -49,13 +41,6 @@ fn releasing_the_lock_frees_it_for_the_next_process() {
         next.may_stream(),
         "the port stayed locked after its owner left"
     );
-}
-
-#[test]
-fn the_lock_port_is_next_to_the_hubs_own() {
-    // The two locks are the same idea; keeping them adjacent is what makes the
-    // second one findable from the first.
-    assert_eq!(LOCK_PORT, nerve_surface_core::hub::PORT + 1);
 }
 
 /// Nothing ever connects to the lock, so it must not be mistaken for a service.

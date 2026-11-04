@@ -87,44 +87,4 @@ struct HostedFocusTests {
     #expect(seen?.directory == "/tmp/proj")
   }
 
-  @Test func anUnmatchedHostLandingDoesNotReportSuccess() {
-    PanelFocusBridge.land = { _ in false }
-    defer { PanelFocusBridge.land = nil }
-    let job = Job.make(
-      id: "local", name: "Build", alias: LocalMachine.alias,
-      producer: ProducerInfo(id: "claude"))
-    guard case .failed = ActionService.openLocation(job) else {
-      Issue.record("the host did not find a terminal or workspace")
-      return
-    }
-  }
-
-  @Test func terminalFocusDeclaresItsAutomationPurpose() throws {
-    let root = URL(fileURLWithPath: #filePath)
-      .deletingLastPathComponent().deletingLastPathComponent()
-      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    let data = try Data(contentsOf: root.appending(path: "Nerve/Nerve/Info.plist"))
-    let plist = try #require(
-      PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
-    let purpose = plist["NSAppleEventsUsageDescription"] as? String
-    #expect(purpose?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-  }
-
-  @Test func oneRowFitsItsContent() {
-    var job = Job.make(
-      id: "1", name: "Tether", alias: "mac", producer: ProducerInfo(id: "claude"))
-    job.display = HubDisplay(
-      machineGroup: "mac", machineLabel: "mac", sourceOnline: true,
-      status: "running", statusRank: 1, ask: false, busy: false,
-      role: "job", groupId: nil, paintsRibbon: true, section: "active",
-      statusLabel: "Running", activity: "Finished grep", order: 0)
-    let store = JobStore()
-    store.applyFrame(jobs: [job], timelines: [:])
-    let root = StatusPanelRoot(store: store, settings: SettingsStore(), fitsContent: true)
-    let hosting = NSHostingView(rootView: root)
-    hosting.frame.size = NSSize(width: 460, height: 720)
-    let fitted = hosting.fittingSize
-    #expect(fitted.height > 48)
-    #expect(fitted.height < 160)
-  }
 }

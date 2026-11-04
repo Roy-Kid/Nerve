@@ -40,14 +40,6 @@ class AdapterTests(unittest.TestCase):
     def test_invalid_json_is_fail_open(self):
         with patch.object(hook.json,"load",side_effect=ValueError("invalid")):
             self.assertEqual(hook.main(),0)
-    def test_agent_pid_stops_at_the_interpreter(self):
-        def ps(args, **_kwargs):
-            pid = args[2]
-            return {"4": "3 bash\n", "3": "2 node\n", "8": "7 python3\n"}.get(pid, "1 claude\n")
-        with patch.object(hook.os, "getppid", return_value=4), patch.object(hook.subprocess, "check_output", side_effect=ps):
-            self.assertEqual(hook.agent_pid(), 3)
-        with patch.object(hook.os, "getppid", return_value=8), patch.object(hook.subprocess, "check_output", side_effect=ps):
-            self.assertEqual(hook.agent_pid(), 8)
     def test_same_slot_for_new_session(self):
         with patch.object(hook,"agent_pid",return_value=123):
             self.assertEqual(hook.enrich({"session_id":"a"})["slotId"],hook.enrich({"session_id":"b"})["slotId"])

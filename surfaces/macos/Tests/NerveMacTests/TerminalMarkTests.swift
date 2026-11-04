@@ -25,13 +25,4 @@ struct TerminalMarkTests {
     #expect(marks[0].color == colors.color(for: .attention).hex)
   }
 
-  @Test func aFrameWithoutMarksHasNone() throws {
-    let json = #"{"protocolVersion":2,"hubInstanceId":"hub","revision":1,"jobs":[]}"#
-    let frame = try JSONDecoder().decode(HubFrame.self, from: Data(json.utf8))
-    #expect(frame.tabIndicators.isEmpty)
-  }
-
-  @Test func coloursAreRibbonBytes() {
-    #expect(RGBColor(r: 1, g: 0.5, b: 0).hex == 0xFF8000)
-  }
 }

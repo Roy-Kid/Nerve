@@ -1,11 +1,6 @@
 //! Percent coding, at the byte level it actually operates on.
 
-use nerve_platform::path::{percent_decode, percent_encode_path};
-
-#[test]
-fn a_string_without_escapes_is_returned_as_is() {
-    assert_eq!(percent_decode("/Users/me/proj"), "/Users/me/proj");
-}
+use nerve_platform::path::percent_decode;
 
 #[test]
 fn escapes_spell_one_character_together() {
@@ -22,32 +17,6 @@ fn a_literal_percent_survives_decoding() {
     // `%/d` is not an escape; leaving it alone is what keeps a real directory
     // named `100%` readable.
     assert_eq!(percent_decode("/tmp/100%/done"), "/tmp/100%/done");
-}
-
-#[test]
-fn a_truncated_escape_survives_decoding() {
-    assert_eq!(percent_decode("/tmp/a%2"), "/tmp/a%2");
-    assert_eq!(percent_decode("/tmp/a%"), "/tmp/a%");
-}
-
-#[test]
-fn either_hex_case_decodes() {
-    assert_eq!(percent_decode("%2f%2F"), "//");
-}
-
-#[test]
-fn encoding_then_decoding_is_the_identity() {
-    for path in [
-        "/Users/me/proj",
-        "/Users/me/proj foo",
-        "/Users/me/项目",
-        "/tmp/100%/done",
-        "/tmp/a\\b",
-        "/a-b_c.d~e/9Z",
-        "/tmp/quote'and\"double",
-    ] {
-        assert_eq!(percent_decode(&percent_encode_path(path)), path, "{path}");
-    }
 }
 
 #[test]

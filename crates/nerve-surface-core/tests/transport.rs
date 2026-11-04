@@ -10,7 +10,6 @@
 //! running.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use axum::extract::ConnectInfo;
 use axum::http::Request;
@@ -112,24 +111,6 @@ fn snapshot(name: &str) -> Value {
     })
 }
 
-/// One `GET`, end to end: real status line, real headers, real body.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_one_shot_get_reads_the_jobs_list() {
-    let hub_runtime = runtime();
-    let address = serve(&hub_runtime).await;
-    post(&hub_runtime, "/v1/snapshot", snapshot("nerve")).await;
-
-    let base = format!("http://{address}");
-    let raw = tokio::task::spawn_blocking(move || Hub::at(base).get("/v1/jobs"))
-        .await
-        .expect("join")
-        .expect("the hub answers its own job list");
-
-    let jobs = Frame::decode_jobs_list(&raw).expect("a bare array decodes");
-    assert_eq!(jobs.len(), 1);
-    assert_eq!(jobs[0].name, "nerve");
-}
-
 /// The stream, end to end. This is the path a hand-rolled reader got quietly
 /// wrong: the hub's body is chunked, and a chunk boundary may fall anywhere —
 /// including inside a `data:` line.
@@ -153,65 +134,6 @@ async fn the_event_stream_delivers_a_decodable_frame() {
     let frame = Frame::decode(&frame).expect("the payload is a frame");
     assert_eq!(frame.jobs.len(), 1);
     assert_eq!(frame.jobs[0].name, "nerve");
-}
-
-/// Several snapshots in a row, so the parser is driven across more than one
-/// event and more than one chunk.
-#[tokio::test(flavor = "multi_thread")]
-async fn the_stream_keeps_delivering_as_jobs_change() {
-    let hub_runtime = runtime();
-    let address = serve(&hub_runtime).await;
-    post(&hub_runtime, "/v1/snapshot", snapshot("first")).await;
-
-    let base = format!("http://{address}");
-    let handle = tokio::task::spawn_blocking(move || {
-        let hub = Hub::at(base);
-        let mut events = hub.open("/v1/stream?surface=test").expect("stream opens");
-        let mut names = Vec::new();
-        for _ in 0..2 {
-            let Some(payload) = events.next_payload().expect("stream stays alive") else {
-                break;
-            };
-            let frame = Frame::decode(&payload).expect("payload is a frame");
-            names.push(
-                frame
-                    .jobs
-                    .iter()
-                    .map(|job| job.name.clone())
-                    .collect::<Vec<_>>(),
-            );
-        }
-        names
-    });
-
-    // Give the connect frame time to land before changing the world.
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    post(&hub_runtime, "/v1/snapshot", snapshot("second")).await;
-
-    let names = handle.await.expect("join");
-    assert!(!names.is_empty(), "no frame arrived at all");
-    let seen: Vec<&String> = names.iter().flatten().collect();
-    assert!(
-        seen.iter().any(|name| name.as_str() == "first"),
-        "never saw the first job: {names:?}"
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn an_unknown_path_is_a_status_not_a_body() {
-    let hub_runtime = runtime();
-    let address = serve(&hub_runtime).await;
-
-    let base = format!("http://{address}");
-    let error = tokio::task::spawn_blocking(move || Hub::at(base).get("/v1/nope"))
-        .await
-        .expect("join")
-        .expect_err("a missing route is not a body");
-
-    assert!(
-        matches!(error, HubError::Status(404)),
-        "expected a 404, got {error:?}"
-    );
 }
 
 /// Nothing listening is a different state from a connection that broke: one

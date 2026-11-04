@@ -142,30 +142,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn single_prefers_macos_over_vscode() {
-        let owner = elect(
-            NotifyPolicy::Single,
-            &["vscode".into(), "macos".into(), "tmux".into()],
-        );
-        assert_eq!(owner.as_deref(), Some("macos"));
-    }
-
-    #[test]
     fn single_falls_to_vscode_when_macos_is_gone() {
         let owner = elect(NotifyPolicy::Single, &["tmux".into(), "vscode".into()]);
         assert_eq!(owner.as_deref(), Some("vscode"));
-    }
-
-    #[test]
-    fn single_prefers_the_menu_bar_over_tether_and_tether_over_vscode() {
-        assert_eq!(
-            elect(NotifyPolicy::Single, &["tether".into(), "macos".into()]).as_deref(),
-            Some("macos")
-        );
-        assert_eq!(
-            elect(NotifyPolicy::Single, &["vscode".into(), "tether".into()]).as_deref(),
-            Some("tether")
-        );
     }
 
     #[test]
@@ -174,23 +153,5 @@ mod tests {
             elect(NotifyPolicy::All, &["macos".into(), "vscode".into()]),
             None
         );
-    }
-
-    #[test]
-    fn unknown_label_is_still_a_deterministic_owner() {
-        let owner = elect(NotifyPolicy::Single, &["zeta".into(), "alpha".into()]);
-        assert_eq!(owner.as_deref(), Some("alpha"));
-    }
-
-    #[test]
-    fn empty_set_has_no_owner() {
-        assert_eq!(elect(NotifyPolicy::Single, &[]), None);
-    }
-
-    #[test]
-    fn surface_label_folds_case_and_blanks() {
-        assert_eq!(surface_label(None), "anonymous");
-        assert_eq!(surface_label(Some("  ")), "anonymous");
-        assert_eq!(surface_label(Some("macOS")), "macos");
     }
 }

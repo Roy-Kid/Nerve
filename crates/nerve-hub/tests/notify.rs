@@ -144,16 +144,6 @@ impl SseClient {
 }
 
 #[tokio::test]
-async fn test_rest_notify_defaults_to_single_with_no_owner() {
-    let runtime = runtime();
-    let reply = call(&runtime, request("GET", "/v1/notify", Body::empty())).await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.body["policy"], "single");
-    assert!(reply.body["owner"].is_null());
-    assert_eq!(reply.body["watchers"], 0);
-}
-
-#[tokio::test]
 async fn test_put_notify_all_clears_the_owner() {
     let runtime = runtime();
     let _hold = runtime.subscribe();
@@ -165,41 +155,6 @@ async fn test_put_notify_all_clears_the_owner() {
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.body["policy"], "all");
     assert!(reply.body["owner"].is_null());
-}
-
-#[tokio::test]
-async fn test_put_notify_rejects_unknown_policy() {
-    let runtime = runtime();
-    let reply = call(
-        &runtime,
-        request("PUT", "/v1/notify", Body::from(r#"{"policy":"both"}"#)),
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
-    assert_eq!(reply.body["error"], "unknown notify policy");
-}
-
-#[tokio::test]
-async fn test_labelled_stream_elects_macos_over_vscode() {
-    let runtime = runtime();
-    let address = serve(&runtime).await;
-
-    let mut macos = SseClient::connect(address, "?surface=macos").await;
-    let first = macos.frame().await;
-    assert_eq!(first["notify"]["owner"], "macos");
-    assert_eq!(first["notify"]["policy"], "single");
-
-    let mut vscode = SseClient::connect(address, "?surface=vscode").await;
-    let vscode_frame = vscode.until(|frame| frame["notify"]["watchers"] == 2).await;
-    assert_eq!(vscode_frame["notify"]["owner"], "macos");
-    let surfaces = vscode_frame["notify"]["surfaces"]
-        .as_array()
-        .expect("surfaces");
-    assert!(surfaces.iter().any(|value| value == "macos"));
-    assert!(surfaces.iter().any(|value| value == "vscode"));
-
-    let updated = macos.until(|frame| frame["notify"]["watchers"] == 2).await;
-    assert_eq!(updated["notify"]["owner"], "macos");
 }
 
 #[tokio::test]

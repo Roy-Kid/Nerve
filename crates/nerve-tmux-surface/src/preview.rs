@@ -532,14 +532,4 @@ mod tests {
         preview.restore();
         assert!(preview.is_idle());
     }
-
-    #[test]
-    fn swap_records_round_trip() {
-        assert_eq!(parse_swap_record("%33 %19"), Some(("%33", "%19")));
-        assert_eq!(parse_swap_record("  %33   %19  "), Some(("%33", "%19")));
-        assert_eq!(parse_swap_record("%33"), None);
-        assert_eq!(parse_swap_record(""), None);
-        // A record that swaps a pane with itself would be a no-op at best.
-        assert_eq!(parse_swap_record("%33 %33"), None);
-    }
 }

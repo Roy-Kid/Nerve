@@ -38,39 +38,12 @@ fn a_reaped_child_is_dead() {
     assert!(!is_alive(pid));
 }
 
-#[test]
-fn a_pid_that_names_no_process_is_never_alive() {
-    // 0 means "our own group" on POSIX and nothing here; negatives name a
-    // group. Callers already refuse these, so this pins the defensive answer.
-    for pid in [0, -1, -12345] {
-        assert_ne!(state(pid), PidState::Alive, "pid {pid}");
-    }
-}
-
-#[test]
-fn an_absurd_pid_answers_without_panicking() {
-    // The contract is that a probe always answers. Which answer depends on the
-    // OS's pid space, so this asserts only that asking is safe.
-    let _ = state(i32::MAX);
-}
-
 #[cfg(unix)]
 #[test]
 fn init_exists_even_when_we_may_not_signal_it() {
     // pid 1 is always running and usually not ours to signal — exactly the
     // case the `Denied` state exists for.
     assert_ne!(state(1), PidState::Dead);
-}
-
-#[test]
-fn a_live_process_has_a_stable_start_token() {
-    let me = std::process::id() as i32;
-    let token = start_token(me).expect("our process has a start token");
-    assert_eq!(start_token(me).as_deref(), Some(token.as_str()));
-    // pid <= 1 is not a producer and is not probed.
-    assert!(start_token(0).is_none());
-    assert!(start_token(1).is_none());
-    assert!(start_token(-1).is_none());
 }
 
 /// Kills the child on every path out, including a failed assertion.

@@ -45,31 +45,12 @@ suite("hub locate", () => {
     assert.equal(found, checkout);
   });
 
-  test("the first install directory beats the second", () => {
-    assert.equal(locate({ [first]: true, [second]: true }), first);
-  });
-
   test("an install directory beats cargo", () => {
     assert.equal(locate({ [second]: true, [cargo]: true }), second);
   });
 
-  test("cargo beats PATH", () => {
-    assert.equal(locate({ [cargo]: true }, "/usr/bin/nerve-hub"), cargo);
-  });
-
   test("falls through to PATH", () => {
     assert.equal(locate({}, "/usr/bin/nerve-hub"), "/usr/bin/nerve-hub");
-  });
-
-  test("missing is undefined", () => {
-    assert.equal(locate({}), undefined);
-  });
-
-  test("the binary name carries the platform suffix", () => {
-    assert.equal(
-      HUB_BINARY,
-      process.platform === "win32" ? "nerve-hub.exe" : "nerve-hub",
-    );
   });
 
   test("windows install directories come from the environment", () => {

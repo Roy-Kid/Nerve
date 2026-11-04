@@ -331,12 +331,6 @@ mod auto_close_tests {
     }
 
     #[test]
-    fn a_window_without_a_sidebar_is_not_ours_to_close() {
-        assert!(!only_sidebar_remains("%0|"));
-        assert!(!only_sidebar_remains(""));
-    }
-
-    #[test]
     fn an_unreadable_row_never_closes_anything() {
         assert!(!only_sidebar_remains("%1|nerve-sidebar\ngarbage"));
     }

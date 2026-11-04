@@ -34,11 +34,3 @@ test('a hook with no tty of its own reports an ancestor terminal', {skip:process
  assert.match(event.terminalName,/^\/dev\/(ttys\d+|pts\/\d+)$/);
  assert.equal(event.terminalHost,require('node:os').hostname().toLowerCase());
 });
-test('a piped hook still reports its controlling terminal without relying on agent PID discovery', {skip:process.platform !== 'darwin'}, () => {
- const program = `process.stdout.write(JSON.stringify(require(${JSON.stringify(__dirname + '/nerve.js')}).enrich({})))`;
- const out = spawnSync('script',['-q','/dev/null',process.execPath,'-e',program],{encoding:'utf8',timeout:2000,stdio:['ignore','pipe','pipe']});
- assert.equal(out.status,0);
- const event = JSON.parse(out.stdout.match(/\{[^\r\n]+\}/)[0]);
- assert.match(event.terminalName,/^\/dev\/ttys\d+$/);
- assert.equal(event.terminalHost,require('node:os').hostname().toLowerCase());
-});

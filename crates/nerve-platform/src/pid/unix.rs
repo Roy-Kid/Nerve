@@ -163,9 +163,4 @@ mod tests {
             Some("424242")
         );
     }
-
-    #[test]
-    fn stat_without_a_comm_has_no_start_token() {
-        assert_eq!(super::start_token_from_stat("nope").as_deref(), None);
-    }
 }

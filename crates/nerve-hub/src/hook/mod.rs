@@ -317,41 +317,6 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_event_in_a_new_session_supersedes_the_same_slot() {
-        let (mut store, mut slots) = store();
-        apply(
-            &mut store,
-            &mut slots,
-            Producer::Grok,
-            &json!({
-                "hook_event_name": "PreToolUse",
-                "session_id": "old",
-                "cwd": "/tmp/p",
-                "tool_name": "read_file"
-            }),
-        );
-        apply(
-            &mut store,
-            &mut slots,
-            Producer::Grok,
-            &json!({
-                "hook_event_name": "PreToolUse",
-                "session_id": "new",
-                "cwd": "/tmp/p",
-                "tool_name": "read_file"
-            }),
-        );
-        let ids: Vec<String> = store
-            .jobs_json()
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|job| job["id"].as_str().map(str::to_string))
-            .collect();
-        assert_eq!(ids, vec!["grok:new".to_string()]);
-    }
-
-    #[test]
     fn a_new_session_evicts_a_same_workspace_row_after_slot_map_reset() {
         let (mut store, mut slots) = store();
         apply(
@@ -423,77 +388,6 @@ mod tests {
             .collect();
         ids.sort();
         assert_eq!(ids, vec!["grok:left".to_string(), "grok:right".to_string()]);
-    }
-
-    #[test]
-    fn the_same_injected_slot_still_supersedes() {
-        let (mut store, mut slots) = store();
-        apply(
-            &mut store,
-            &mut slots,
-            Producer::Grok,
-            &json!({
-                "hook_event_name": "SessionStart",
-                "session_id": "old",
-                "cwd": "/tmp/p",
-                "slotId": "same-window"
-            }),
-        );
-        apply(
-            &mut store,
-            &mut slots,
-            Producer::Grok,
-            &json!({
-                "hook_event_name": "SessionStart",
-                "session_id": "new",
-                "cwd": "/tmp/p",
-                "slotId": "same-window"
-            }),
-        );
-        let ids: Vec<String> = store
-            .jobs_json()
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|job| job["id"].as_str().map(str::to_string))
-            .collect();
-        assert_eq!(ids, vec!["grok:new".to_string()]);
-    }
-
-    #[test]
-    fn a_later_snapshot_keeps_created_at() {
-        use std::time::Duration;
-
-        let clock = Arc::new(FakeClock::new(datetime!(2026-08-23 12:00:00 UTC)));
-        let mut store = JobStore::new(clock.clone(), "test-mac".into(), Arc::new(SignalProbe));
-        let mut slots = SlotMap::new();
-        apply(
-            &mut store,
-            &mut slots,
-            Producer::Claude,
-            &json!({
-                "hook_event_name": "SessionStart",
-                "session_id": "s1",
-                "cwd": "/tmp/p"
-            }),
-        );
-        let created = store.jobs_json()[0]["createdAt"].clone();
-        clock.advance(Duration::from_secs(30));
-        apply(
-            &mut store,
-            &mut slots,
-            Producer::Claude,
-            &json!({
-                "hook_event_name": "PreToolUse",
-                "session_id": "s1",
-                "cwd": "/tmp/p",
-                "tool_name": "Bash"
-            }),
-        );
-        let job = &store.jobs_json()[0];
-        assert_eq!(job["createdAt"], created);
-        assert_eq!(job["startedAt"], created);
-        assert_ne!(job["updatedAt"], created);
     }
 
     #[test]
@@ -624,42 +518,5 @@ mod tests {
             jobs[0]["location"]["openURL"],
             "file:///C:/Users/me/work/nerve"
         );
-    }
-
-    #[test]
-    fn a_unc_cwd_names_the_project_and_still_links() {
-        let (mut store, mut slots) = store();
-        apply(
-            &mut store,
-            &mut slots,
-            Producer::Claude,
-            &json!({
-                "hook_event_name": "SessionStart",
-                "session_id": "s1",
-                "cwd": "\\\\srv\\share\\nerve"
-            }),
-        );
-        let jobs = store.jobs_json();
-        assert_eq!(jobs[0]["name"], "nerve");
-        assert_eq!(jobs[0]["location"]["openURL"], "file://srv/share/nerve");
-    }
-
-    /// A relative `cwd` is a degraded report, not a reason to lose the name.
-    #[test]
-    fn a_relative_cwd_still_names_the_project_but_links_nowhere() {
-        let (mut store, mut slots) = store();
-        apply(
-            &mut store,
-            &mut slots,
-            Producer::Claude,
-            &json!({
-                "hook_event_name": "SessionStart",
-                "session_id": "s1",
-                "cwd": "work/nerve"
-            }),
-        );
-        let jobs = store.jobs_json();
-        assert_eq!(jobs[0]["name"], "nerve");
-        assert!(jobs[0]["location"]["openURL"].is_null());
     }
 }

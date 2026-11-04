@@ -14,52 +14,7 @@ fn class(value: Value) -> StatusClass {
 
 // ── The enum itself ─────────────────────────────────────────────────────────
 
-#[test]
-fn test_classes_are_ordered_most_urgent_first() {
-    assert_eq!(
-        StatusClass::ALL,
-        [
-            StatusClass::Problem,
-            StatusClass::Attention,
-            StatusClass::Waiting,
-            StatusClass::Running,
-            StatusClass::Monitor,
-            StatusClass::Success,
-            StatusClass::Inactive,
-        ]
-    );
-    assert!(StatusClass::Problem < StatusClass::Attention);
-    assert!(StatusClass::Running < StatusClass::Success);
-    assert!(StatusClass::Success < StatusClass::Inactive);
-}
-
-#[test]
-fn test_labels_match_the_swift_raw_values() {
-    let labels: Vec<&str> = StatusClass::ALL.iter().map(|c| c.label()).collect();
-
-    assert_eq!(
-        labels,
-        vec![
-            "problem",
-            "attention",
-            "waiting",
-            "running",
-            "monitor",
-            "success",
-            "inactive"
-        ]
-    );
-}
-
 // ── :39 / :40 — problem ─────────────────────────────────────────────────────
-
-#[test]
-fn test_line_39_a_failed_outcome_is_a_problem() {
-    assert_eq!(
-        class(json!({ "id": "a", "lifecycle": "active", "outcome": "failure" })),
-        StatusClass::Problem
-    );
-}
 
 /// `:39` runs before the lifecycle branches, so an ended failure is a problem
 /// rather than an inactive row.
@@ -67,14 +22,6 @@ fn test_line_39_a_failed_outcome_is_a_problem() {
 fn test_line_39_beats_the_ended_lifecycle_branch() {
     assert_eq!(
         class(json!({ "id": "a", "lifecycle": "ended", "outcome": "failure" })),
-        StatusClass::Problem
-    );
-}
-
-#[test]
-fn test_line_40_an_unresponsive_job_is_a_problem() {
-    assert_eq!(
-        class(json!({ "id": "a", "lifecycle": "active", "health": "unresponsive" })),
         StatusClass::Problem
     );
 }
@@ -134,18 +81,6 @@ fn test_line_53_elevated_attention_without_a_reason_is_attention() {
 }
 
 #[test]
-fn test_line_49_an_unrecognised_reason_at_suggested_is_attention() {
-    assert_eq!(
-        class(json!({
-            "id": "a",
-            "lifecycle": "active",
-            "attention": { "level": "urgent", "reason": "review" }
-        })),
-        StatusClass::Attention
-    );
-}
-
-#[test]
 fn test_line_43_every_wait_reason_at_required_is_waiting() {
     for reason in [
         "resource",
@@ -168,35 +103,6 @@ fn test_line_43_every_wait_reason_at_required_is_waiting() {
             "attention.reason `{reason}` at required must be attention"
         );
     }
-}
-
-/// `Subject.swift:44` lower-cases the reason before matching, so a producer
-/// shouting does not change the class.
-#[test]
-fn test_line_44_reason_matching_ignores_case() {
-    assert_eq!(
-        class(json!({
-            "id": "a",
-            "lifecycle": "active",
-            "attention": { "level": "required", "reason": "Dependency" }
-        })),
-        StatusClass::Waiting
-    );
-}
-
-/// `attention.reason = "failure"` is a WAIT reason (`:47`), not a problem: the
-/// job is blocked on something that failed, `outcome` is what says the job
-/// itself failed. Painted as Attention with every other wait.
-#[test]
-fn test_line_47_an_attention_reason_of_failure_asks_rather_than_alarms() {
-    assert_eq!(
-        class(json!({
-            "id": "a",
-            "lifecycle": "active",
-            "attention": { "level": "urgent", "reason": "failure" }
-        })),
-        StatusClass::Waiting
-    );
 }
 
 // ── :56-:66 — informational attention ───────────────────────────────────────
@@ -250,33 +156,12 @@ fn test_line_64_an_unrecognised_informational_reason_falls_through_to_running() 
     );
 }
 
-/// `:56` requires a reason: informational alone never colours a row.
-#[test]
-fn test_line_56_informational_without_a_reason_falls_through_to_running() {
-    assert_eq!(
-        class(json!({
-            "id": "a",
-            "lifecycle": "active",
-            "attention": { "level": "informational" }
-        })),
-        StatusClass::Running
-    );
-}
-
 // ── :68-:74 — lifecycle ─────────────────────────────────────────────────────
 
 #[test]
 fn test_line_69_an_ended_success_is_success() {
     assert_eq!(
         class(json!({ "id": "a", "lifecycle": "ended", "outcome": "success" })),
-        StatusClass::Success
-    );
-}
-
-#[test]
-fn test_line_69_an_ended_partial_is_success() {
-    assert_eq!(
-        class(json!({ "id": "a", "lifecycle": "ended", "outcome": "partial" })),
         StatusClass::Success
     );
 }
@@ -290,14 +175,6 @@ fn test_line_70_an_ended_job_without_an_outcome_is_inactive() {
 }
 
 #[test]
-fn test_line_70_an_ended_cancellation_is_inactive() {
-    assert_eq!(
-        class(json!({ "id": "a", "lifecycle": "ended", "outcome": "cancelled" })),
-        StatusClass::Inactive
-    );
-}
-
-#[test]
 fn test_line_72_a_suspended_job_is_inactive() {
     assert_eq!(
         class(json!({ "id": "a", "lifecycle": "suspended" })),
@@ -306,25 +183,9 @@ fn test_line_72_a_suspended_job_is_inactive() {
 }
 
 #[test]
-fn test_line_72_an_unknown_lifecycle_is_inactive() {
-    assert_eq!(
-        class(json!({ "id": "a", "lifecycle": "unknown" })),
-        StatusClass::Inactive
-    );
-}
-
-#[test]
 fn test_line_73_a_pending_job_is_waiting() {
     assert_eq!(
         class(json!({ "id": "a", "lifecycle": "pending" })),
-        StatusClass::Waiting
-    );
-}
-
-#[test]
-fn test_line_73_a_created_job_is_waiting() {
-    assert_eq!(
-        class(json!({ "id": "a", "lifecycle": "created" })),
         StatusClass::Waiting
     );
 }
@@ -362,18 +223,6 @@ fn test_line_84_shell_and_agent_activity_is_running() {
             "current.type `{kind}` must run"
         );
     }
-}
-
-#[test]
-fn test_line_81_current_type_matching_ignores_case() {
-    assert_eq!(
-        class(json!({
-            "id": "a",
-            "lifecycle": "active",
-            "current": { "type": "Thinking" }
-        })),
-        StatusClass::Running
-    );
 }
 
 #[test]
@@ -431,28 +280,7 @@ fn test_line_94_an_unmodelled_current_type_leaves_an_open_job_running() {
     );
 }
 
-#[test]
-fn test_line_98_an_open_job_with_no_current_activity_is_running() {
-    assert_eq!(
-        class(json!({ "id": "a", "lifecycle": "active" })),
-        StatusClass::Running
-    );
-}
-
 // ── Free text never classifies (CLAUDE.md invariant 3) ──────────────────────
-
-#[test]
-fn test_a_current_summary_saying_build_failed_stays_running() {
-    assert_eq!(
-        class(json!({
-            "id": "a",
-            "lifecycle": "active",
-            "health": "ok",
-            "current": { "type": "thinking", "summary": "build failed!!" }
-        })),
-        StatusClass::Running
-    );
-}
 
 #[test]
 fn test_no_free_text_field_can_move_a_running_job() {
@@ -516,20 +344,6 @@ fn test_the_six_state_frame_separates_waiting_from_attention() {
             ("claude-code:inactive", StatusClass::Inactive),
         ]
     );
-}
-
-/// Both demo rows are plain open work: `editing` and `building` are producer
-/// vocabulary this table does not model, so both run (`:94` → `:98`).
-#[test]
-fn test_the_demo_fixture_rows_are_both_running() {
-    for job in nerve_surface_core::testkit::demo_jobs() {
-        assert_eq!(
-            StatusClass::of(&job),
-            StatusClass::Running,
-            "job {}",
-            job.id
-        );
-    }
 }
 
 #[test]

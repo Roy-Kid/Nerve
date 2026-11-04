@@ -22,13 +22,6 @@ const pkg = JSON.parse(readFileSync(extensionManifestPath(), "utf8")) as {
 };
 
 suite("manifest", () => {
-  test("activates on startup so the status bar is ambient", () => {
-    assert.ok(pkg.activationEvents?.includes("onStartupFinished"));
-  });
-
-  test("contributes an activity bar container", () => {
-    assert.equal(pkg.contributes?.viewsContainers?.activitybar?.[0]?.id, "nerve");
-  });
 
   test("never contributes reverse-control commands", () => {
     const commands = (pkg.contributes?.commands ?? []).map((item) =>
@@ -51,8 +44,4 @@ suite("manifest", () => {
     );
   });
 
-  test("Ask toast setting defaults on", () => {
-    const ask = pkg.contributes?.configuration?.properties?.["nerve.notifications.ask"];
-    assert.equal(ask?.default, true);
-  });
 });

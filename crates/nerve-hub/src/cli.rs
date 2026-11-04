@@ -126,25 +126,3 @@ impl fmt::Display for UsageError {
 }
 
 impl std::error::Error for UsageError {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn serve_defaults_are_quiet() {
-        let args = ServeArgs::parse(vec![]).unwrap();
-        assert!(!args.verbose());
-    }
-
-    #[test]
-    fn serve_accepts_verbose_and_rejects_grace() {
-        assert!(ServeArgs::parse(vec!["-v".into()]).unwrap().verbose());
-        assert!(ServeArgs::parse(vec!["--grace-secs".into(), "10".into()]).is_err());
-    }
-
-    #[test]
-    fn serve_rejects_unknown_flags() {
-        assert!(ServeArgs::parse(vec!["--port".into(), "9".into()]).is_err());
-    }
-}

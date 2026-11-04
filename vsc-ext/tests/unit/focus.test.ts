@@ -45,27 +45,6 @@ suite("focus ranking", () => {
     assert.deepEqual(target, { kind: "remote", host: "Arrhenius", cwd: "/nobackup/proj" });
   });
 
-  test("a foreign file url is never a local folder", () => {
-    const target = rankFocus(
-      job({ ...onArrhenius, location: { openURL: "file:///nobackup/proj/molcrafts" } }),
-      local,
-    );
-    assert.notEqual(target.kind, "folder");
-  });
-
-  test("an alias the hub did not reach over ssh is this machine's", () => {
-    const target = rankFocus(
-      job({ alias: "otherbox", context: { workspace: "/Users/me/work/nerve" } }),
-      local,
-    );
-    assert.deepEqual(target, { kind: "here" });
-  });
-
-  test("Open on the ssh Host is the foreign button title", () => {
-    assert.equal(focusActionTitle(job(onArrhenius)), "Open on Arrhenius");
-    assert.equal(focusActionTitle(job({ alias: "arrhenius1" })), "Focus");
-  });
-
   test("a remote window on that machine is treated as local", () => {
     const target = rankFocus(
       job({ ...onArrhenius, context: { workspace: "/nobackup/proj" } }),

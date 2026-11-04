@@ -62,11 +62,33 @@ JOBS = {"macos": macos, "windows": windows}
 HOST_JOBS = {"darwin": ("macos",), "win32": ("windows",)}
 
 
+def one_at_a_time():
+    """Two checks in one checkout share its build directories and the window
+    server; the second would only wait on the first."""
+    path = ROOT / "target" / "check.lock"
+    path.parent.mkdir(exist_ok=True)
+    lock = open(path, "a+")
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return None
+    return lock
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--job", choices=sorted(JOBS), action="append",
                         help="the CI job to run; repeatable. Default: every job this host can run")
     args = parser.parse_args()
+    held = one_at_a_time()  # released when the process ends
+    if held is None:
+        print("Another check is already running in this checkout.", file=sys.stderr)
+        return 1
     jobs = args.job or HOST_JOBS.get(sys.platform, ())
     if not jobs:
         print(f"No CI job runs on {sys.platform}; nothing to check.", file=sys.stderr)

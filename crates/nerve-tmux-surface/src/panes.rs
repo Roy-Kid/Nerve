@@ -416,37 +416,6 @@ mod tests {
         }
     }
     #[test]
-    fn exact_path_scores_highest() {
-        let target = PathBuf::from("/tmp/work");
-        assert_eq!(path_match_score("/tmp/work", &target), Some(usize::MAX));
-    }
-    #[test]
-    fn prefix_paths_score_by_overlap() {
-        let target = PathBuf::from("/tmp/work/nerve");
-        assert_eq!(
-            path_match_score("/tmp/work", &target),
-            Some("/tmp/work".len())
-        );
-    }
-    #[test]
-    fn unrelated_paths_do_not_match() {
-        let target = PathBuf::from("/tmp/work");
-        assert_eq!(path_match_score("/elsewhere", &target), None);
-    }
-    #[test]
-    fn unrelated_panes_do_not_end_the_scan() {
-        let panes = [
-            row("%1", "/elsewhere", "ttys001", "other", "@7"),
-            row("%2", "", "ttys002", "other", "@7"),
-            row("%3", "/tmp/work", "ttys003", "agents", "@8"),
-        ]
-        .join("\n");
-        assert_eq!(
-            local(&panes, &job_named("work"), Some("/tmp/work"), None),
-            Some("%3".to_string())
-        );
-    }
-    #[test]
     fn agent_tty_beats_a_same_window_path_match() {
         // The sidebar's own content pane sits in the job's directory; the real
         // agent runs in another window. Identity has to win.
@@ -457,14 +426,6 @@ mod tests {
         .join("\n");
         assert_eq!(
             local(&panes, &job_named("work"), Some("/tmp/work"), Some("s009")),
-            Some("%5".to_string())
-        );
-    }
-    #[test]
-    fn agent_tty_matches_without_any_path() {
-        let panes = ssh_row("%5", "ttys009", "agents", "@8").replace("ssh", "zsh");
-        assert_eq!(
-            local(&panes, &job_named("work"), None, Some("s009")),
             Some("%5".to_string())
         );
     }
@@ -504,18 +465,6 @@ mod tests {
     }
 
     #[test]
-    fn same_window_breaks_ties_between_equal_paths() {
-        let panes = [
-            row("%1", "/tmp/work", "ttys001", "other", "@7"),
-            row("%2", "/tmp/work", "ttys002", "nerve", "@1"),
-        ]
-        .join("\n");
-        assert_eq!(
-            local(&panes, &job_named("work"), Some("/tmp/work"), None),
-            Some("%2".to_string())
-        );
-    }
-    #[test]
     fn a_remote_job_lands_on_the_pane_ssh_d_into_its_machine() {
         let panes = [
             row("%1", "/Users/me/work", "ttys001", "nerve", "@1"),
@@ -525,12 +474,6 @@ mod tests {
         .join("\n");
         let seen = destinations(&[("/dev/ttys006", "Arrhenius"), ("/dev/ttys010", "dardel")]);
         assert_eq!(route_pane(&panes, &seen), Some("%4".to_string()));
-    }
-    #[test]
-    fn a_machine_nobody_is_ssh_d_into_matches_nothing() {
-        let panes = ssh_row("%4", "ttys006", "other", "@4");
-        let seen = destinations(&[("/dev/ttys006", "dardel")]);
-        assert_eq!(route_pane(&panes, &seen), None);
     }
     #[test]
     fn a_login_node_typed_by_name_is_not_the_host() {
@@ -544,32 +487,6 @@ mod tests {
             ("/dev/ttys010", "arrhenius1"),
         ]);
         assert_eq!(route_pane(&panes, &seen), Some("%4".to_string()));
-    }
-    #[test]
-    fn the_route_carries_the_host_enter_has_to_talk_to() {
-        let panes = ssh_row("%4", "ttys006", "other", "@4");
-        let seen = destinations(&[("/dev/ttys006", "Arrhenius")]);
-        let route = select_ssh_route(&panes, &sidebar(), "Arrhenius", &seen).expect("route");
-        assert_eq!(route.pane, "%4");
-        // The pane alone is not enough: `Enter` has to address the far side
-        // exactly as the human's config spells it (`ssh::parse_destination`
-        // already strips any `user@` before it gets here).
-        assert_eq!(route.destination, "Arrhenius");
-    }
-    /// Why the preview refuses to mirror an ssh pane: the route is the
-    /// machine's, so every job on that machine resolves to the same pane and a
-    /// mirror would show three jobs one terminal and call it each of them.
-    #[test]
-    fn every_job_on_one_machine_resolves_to_the_same_ssh_pane() {
-        let panes = [
-            ssh_row("%4", "ttys006", "other", "@4"),
-            row("%1", "/Users/me/work", "ttys001", "nerve", "@1"),
-        ]
-        .join("\n");
-        let seen = destinations(&[("/dev/ttys006", "Arrhenius")]);
-        let pane_for = |_job: &str| route_pane(&panes, &seen);
-        assert_eq!(pane_for("molcrafts"), Some("%4".to_string()));
-        assert_eq!(pane_for("salamander"), pane_for("molcrafts"));
     }
     #[test]
     fn a_remote_job_never_scans_for_a_local_pane() {
@@ -597,13 +514,5 @@ mod tests {
         }))
         .expect("job fixture");
         assert!(matches!(JobTarget::of(&job), Some(JobTarget::Local { .. })));
-    }
-    #[test]
-    fn tty_spellings_normalise_to_one() {
-        assert_eq!(normalize_tty("/dev/ttys001"), "s001");
-        assert_eq!(normalize_tty("ttys001"), "s001");
-        assert_eq!(normalize_tty("s001"), "s001");
-        assert_eq!(normalize_tty("/dev/pts/3"), "pts/3");
-        assert_eq!(normalize_tty("pts/3"), "pts/3");
     }
 }

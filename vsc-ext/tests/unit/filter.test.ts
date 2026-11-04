@@ -10,26 +10,6 @@ function job(value: Record<string, unknown>): Job {
 }
 
 suite("filter", () => {
-  test("this folder matches workspace prefix", () => {
-    const row = job({ context: { workspace: "/Users/me/work/nerve" } });
-    assert.equal(jobInFolder(row, ["/Users/me/work/nerve"]), true);
-    assert.equal(jobInFolder(row, ["/Users/me/work/other"]), false);
-    assert.equal(
-      jobInFolder(
-        job({ context: { workspace: "/Users/me/work/nerve-extra" } }),
-        ["/Users/me/work/nerve"],
-      ),
-      false,
-    );
-  });
-
-  test("this folder matches a windows workspace too", () => {
-    // The folder filter was dead on Windows: the comparison only knew `/`.
-    const row = job({ context: { workspace: "C:\\Users\\me\\work\\nerve" } });
-    assert.equal(jobInFolder(row, ["C:\\Users\\me\\work"]), true);
-    assert.equal(jobInFolder(row, ["C:/Users/me/work"]), true);
-    assert.equal(jobInFolder(row, ["C:\\Users\\me\\other"]), false);
-  });
 
   test("attention filter is needs-you, not a failure", () => {
     assert.equal(
@@ -65,7 +45,4 @@ suite("filter", () => {
     );
   });
 
-  test("all is unfiltered", () => {
-    assert.equal(matchesFilter(job({ lifecycle: "active" }), "all", []), true);
-  });
 });

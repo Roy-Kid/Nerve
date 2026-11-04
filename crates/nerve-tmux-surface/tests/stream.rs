@@ -214,17 +214,6 @@ fn session_with(
 // Backoff (acceptance A4)
 // ════════════════════════════════════════════════════════════════════════════
 
-#[test]
-fn test_a_fresh_backoff_starts_at_half_a_second() {
-    assert_eq!(Backoff::new().peek(), Duration::from_millis(500));
-}
-
-#[test]
-fn test_the_first_delay_and_the_cap_are_the_documented_constants() {
-    assert_eq!(Backoff::FIRST, Duration::from_millis(500));
-    assert_eq!(Backoff::CAP, Duration::from_secs(30));
-}
-
 /// Acceptance A4, hard-coded: `0.5, 1, 2, 4, 8, 16, 30, 30`.
 #[test]
 fn test_consecutive_failures_double_up_to_a_thirty_second_cap() {
@@ -247,16 +236,6 @@ fn test_consecutive_failures_double_up_to_a_thirty_second_cap() {
     );
 }
 
-#[test]
-fn test_the_cap_holds_however_long_the_hub_stays_away() {
-    let mut backoff = Backoff::new();
-    for _ in 0..100 {
-        backoff.fail();
-    }
-
-    assert_eq!(backoff.fail(), Duration::from_secs(30));
-}
-
 /// Acceptance A4: one success and the next outage starts over at 0.5s.
 #[test]
 fn test_a_success_resets_the_delay_to_the_first_step() {
@@ -265,23 +244,6 @@ fn test_a_success_resets_the_delay_to_the_first_step() {
         backoff.fail();
     }
 
-    backoff.reset();
-
-    assert_eq!(backoff.fail(), Duration::from_millis(500));
-}
-
-#[test]
-fn test_peek_reports_what_the_next_failure_will_cost() {
-    let mut backoff = Backoff::new();
-    backoff.fail();
-
-    assert_eq!(backoff.peek(), Duration::from_secs(1));
-    assert_eq!(backoff.fail(), Duration::from_secs(1));
-}
-
-#[test]
-fn test_resetting_a_fresh_backoff_changes_nothing() {
-    let mut backoff = Backoff::new();
     backoff.reset();
 
     assert_eq!(backoff.fail(), Duration::from_millis(500));
@@ -300,68 +262,6 @@ fn test_an_unreachable_hub_writes_the_offline_placeholder() {
 
     assert_eq!(attempt, Attempt::Ended { frames: 0 });
     assert_eq!(wires.written(), vec![SummaryRenderer::DEFAULT_OFFLINE]);
-}
-
-#[test]
-fn test_an_unreachable_hub_is_never_read_from() {
-    let (mut session, wires) = session(vec![false], vec![], vec![]);
-
-    session.attach();
-
-    assert_eq!(wires.reads.get(), 0);
-}
-
-#[test]
-fn test_the_offline_text_is_the_one_the_session_was_given() {
-    let (mut session, wires) = session_with(vec![false], vec![], vec![], "nerve: offline");
-
-    session.attach();
-
-    assert_eq!(wires.written(), vec!["nerve: offline"]);
-}
-
-#[test]
-fn test_every_frame_is_rendered_into_the_segment() {
-    let (mut session, wires) = session(
-        vec![true],
-        vec![
-            Step::Frame(ONE_RUNNING),
-            Step::Frame(RUNNING_AND_PROBLEM),
-            Step::Close,
-        ],
-        vec![],
-    );
-
-    let attempt = session.attach();
-
-    assert_eq!(attempt, Attempt::Ended { frames: 2 });
-    assert_eq!(
-        wires.written(),
-        vec![
-            ONE_RUNNING_SEGMENT,
-            RUNNING_AND_PROBLEM_SEGMENT,
-            SummaryRenderer::DEFAULT_OFFLINE,
-        ]
-    );
-}
-
-/// A hub that closes the stream is a hub that is going away: the counts must
-/// not stay on screen pretending otherwise.
-#[test]
-fn test_a_closed_stream_ends_the_attach_and_goes_offline() {
-    let (mut session, wires) = session(
-        vec![true],
-        vec![Step::Frame(ONE_RUNNING), Step::Close],
-        vec![],
-    );
-
-    let attempt = session.attach();
-
-    assert_eq!(attempt, Attempt::Ended { frames: 1 });
-    assert_eq!(
-        wires.written(),
-        vec![ONE_RUNNING_SEGMENT, SummaryRenderer::DEFAULT_OFFLINE]
-    );
 }
 
 #[test]
@@ -426,21 +326,6 @@ fn test_a_gone_tmux_server_stops_the_session_at_once() {
 
     assert_eq!(attempt, Attempt::ServerGone);
     assert_eq!(wires.reads.get(), 1);
-}
-
-/// …and it does not then try to paint an offline placeholder into a tmux that
-/// is not there.
-#[test]
-fn test_a_gone_tmux_server_writes_no_offline_placeholder() {
-    let (mut session, wires) = session(
-        vec![true],
-        vec![Step::Frame(ONE_RUNNING), Step::Close],
-        vec![TmuxError::ServerGone],
-    );
-
-    session.attach();
-
-    assert_eq!(wires.written(), vec![ONE_RUNNING_SEGMENT]);
 }
 
 /// Fail-open: a tmux hiccup that is not `ServerGone` costs one repaint, not

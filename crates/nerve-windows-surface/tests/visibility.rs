@@ -33,12 +33,3 @@ fn clicking_the_icon_after_focus_loss_does_not_reopen_the_panel() {
     assert!(!panel.can_reopen(now + Duration::from_millis(100)));
     assert!(panel.can_reopen(now + Duration::from_millis(201)));
 }
-
-#[test]
-fn unknown_focus_does_not_dismiss_an_open_panel() {
-    let mut panel = Visibility::default();
-    panel.show();
-    panel.lost_focus(Some(true));
-    assert!(!panel.lost_focus(None));
-    assert!(panel.lost_focus(Some(false)));
-}

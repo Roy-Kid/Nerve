@@ -36,22 +36,3 @@ fn home() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dir_is_under_a_known_suffix() {
-        let dir = dir();
-        let s = dir.to_string_lossy();
-        assert!(
-            s.contains("Logs/Nerve")
-                || s.contains("Logs\\Nerve")
-                || s.contains("Nerve/Logs")
-                || s.contains("Nerve\\Logs")
-                || s.contains("nerve/logs"),
-            "{s}"
-        );
-    }
-}

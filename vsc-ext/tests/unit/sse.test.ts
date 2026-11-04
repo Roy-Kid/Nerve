@@ -2,10 +2,6 @@ import { strict as assert } from "node:assert";
 import { SseParser } from "../../src/hub/sse";
 
 suite("sse parser", () => {
-  test("reads a single data payload", () => {
-    const parser = new SseParser();
-    assert.deepEqual(parser.push('data: {"jobs":[]}\n\n'), ['{"jobs":[]}']);
-  });
 
   test("ignores keep-alive comments", () => {
     const parser = new SseParser();

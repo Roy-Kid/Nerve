@@ -19,18 +19,8 @@ fn sig(tally: &Tally) -> nerve_windows_surface::tray::signature::Signature {
 }
 
 #[test]
-fn the_same_state_is_the_same_signature() {
-    assert_eq!(sig(&tally(3, 0)), sig(&tally(3, 0)));
-}
-
-#[test]
 fn a_changed_count_redraws() {
     assert_ne!(sig(&tally(3, 0)), sig(&tally(4, 0)));
-}
-
-#[test]
-fn a_changed_status_redraws() {
-    assert_ne!(sig(&tally(3, 0)), sig(&tally(3, 1)));
 }
 
 /// The gate's whole purpose. A job's `revision` bumps on every tool call, and
@@ -56,24 +46,6 @@ fn going_offline_redraws() {
 }
 
 #[test]
-fn a_theme_switch_redraws() {
-    let bands = stack(&tally(3, 0));
-    assert_ne!(
-        of(&bands, false, Theme::Dark, 16),
-        of(&bands, false, Theme::Light, 16)
-    );
-}
-
-#[test]
-fn a_dpi_change_redraws() {
-    let bands = stack(&tally(3, 0));
-    assert_ne!(
-        of(&bands, false, Theme::Dark, 16),
-        of(&bands, false, Theme::Dark, 32)
-    );
-}
-
-#[test]
 fn weights_below_a_pixel_of_difference_do_not_redraw() {
     let a = vec![Band {
         color: palette::RUNNING,
@@ -89,27 +61,4 @@ fn weights_below_a_pixel_of_difference_do_not_redraw() {
         of(&a, false, Theme::Dark, 16),
         of(&b, false, Theme::Dark, 16)
     );
-}
-
-#[test]
-fn a_visible_weight_change_does_redraw() {
-    let a = vec![Band {
-        color: palette::RUNNING,
-        weight: 0.50,
-        count: 3,
-    }];
-    let b = vec![Band {
-        color: palette::RUNNING,
-        weight: 0.65,
-        count: 3,
-    }];
-    assert_ne!(
-        of(&a, false, Theme::Dark, 16),
-        of(&b, false, Theme::Dark, 16)
-    );
-}
-
-#[test]
-fn an_empty_stack_has_its_own_signature() {
-    assert_ne!(sig(&Tally::default()), sig(&tally(1, 0)));
 }

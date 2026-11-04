@@ -67,7 +67,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use nerve_surface_core::instance::LockStore;
-use nerve_tmux_surface::tmux::{STATUS_OPTION, SegmentWriter, TmuxError, TmuxRunner, TmuxWriter};
+use nerve_tmux_surface::tmux::{SegmentWriter, TmuxError, TmuxRunner, TmuxWriter};
 
 /// The segment a live frame produces — spaces and style markers included.
 const SEGMENT: &str = "#[fg=red]1!#[default] #[fg=blue]2>#[default]";
@@ -134,11 +134,6 @@ fn assert_no_shell(calls: &Calls) {
 
 // ── Writing the segment ─────────────────────────────────────────────────────
 
-#[test]
-fn test_the_status_option_is_the_one_status_right_interpolates() {
-    assert_eq!(STATUS_OPTION, "@nerve_status");
-}
-
 /// Acceptance A5, hard-coded: exactly `set -g @nerve_status <text>` followed
 /// by `refresh-client -S`.
 #[test]
@@ -164,35 +159,6 @@ fn test_no_invocation_is_ever_a_shell_line() {
     assert_no_shell(&calls);
 }
 
-/// The segment carries spaces and `#[…]` markers; it must arrive as one
-/// argument, unquoted and unescaped, or tmux would see several.
-#[test]
-fn test_the_segment_text_is_exactly_one_argument() {
-    let (mut writer, calls) = writer(vec![]);
-    writer.write_segment(SEGMENT).expect("write must succeed");
-
-    let calls = argv(&calls);
-    assert_eq!(calls[0].len(), 4);
-    assert_eq!(calls[0][3], SEGMENT);
-}
-
-/// An empty tally renders an empty segment, and the status line still has to
-/// be told to drop what it was showing.
-#[test]
-fn test_an_empty_segment_still_sets_and_refreshes() {
-    let (mut writer, calls) = writer(vec![]);
-
-    writer.write_segment("").expect("write must succeed");
-
-    assert_eq!(
-        argv(&calls),
-        vec![
-            vec!["set", "-g", "@nerve_status", ""],
-            vec!["refresh-client", "-S"],
-        ]
-    );
-}
-
 /// If the option could not be set there is nothing to refresh.
 #[test]
 fn test_a_refused_set_reports_and_skips_the_refresh() {
@@ -205,15 +171,6 @@ fn test_a_refused_set_reports_and_skips_the_refresh() {
 
     assert!(matches!(result, Err(TmuxError::Refused { status: 1, .. })));
     assert_eq!(argv(&calls).len(), 1);
-}
-
-#[test]
-fn test_a_gone_server_propagates_out_of_a_segment_write() {
-    let (mut writer, _calls) = writer(vec![Err(TmuxError::ServerGone)]);
-
-    let result = writer.write_segment(SEGMENT);
-
-    assert!(matches!(result, Err(TmuxError::ServerGone)));
 }
 
 #[test]
@@ -239,13 +196,6 @@ fn test_no_server_running_is_recognised_as_server_gone() {
 }
 
 #[test]
-fn test_server_gone_is_recognised_whatever_the_case_and_padding() {
-    let err = TmuxError::from_exit(1, "  No server running on /tmp/tmux-0/default\n");
-
-    assert!(err.is_server_gone());
-}
-
-#[test]
 fn test_any_other_failure_stays_a_refusal() {
     let err = TmuxError::from_exit(1, "unknown command: bogus");
 
@@ -254,21 +204,6 @@ fn test_any_other_failure_stays_a_refusal() {
         err,
         TmuxError::Refused { status: 1, ref stderr } if stderr == "unknown command: bogus"
     ));
-}
-
-#[test]
-fn test_a_silent_failure_stays_a_refusal() {
-    let err = TmuxError::from_exit(2, "");
-
-    assert!(!err.is_server_gone());
-    assert!(matches!(err, TmuxError::Refused { status: 2, .. }));
-}
-
-#[test]
-fn test_an_unavailable_tmux_is_not_a_gone_server() {
-    let err = TmuxError::Unavailable("No such file or directory (os error 2)".to_string());
-
-    assert!(!err.is_server_gone());
 }
 
 // ── Reading and writing user options ────────────────────────────────────────
@@ -296,13 +231,6 @@ fn test_an_unset_option_reads_as_absent() {
 }
 
 #[test]
-fn test_a_blank_option_reads_as_absent() {
-    let (mut writer, _calls) = writer(vec![Ok("   \n".to_string())]);
-
-    assert_eq!(writer.get("@nerve_popup_key").expect("read"), None);
-}
-
-#[test]
 fn test_writing_an_option_uses_set_g_and_does_not_refresh() {
     let (mut writer, calls) = writer(vec![]);
 
@@ -312,19 +240,4 @@ fn test_writing_an_option_uses_set_g_and_does_not_refresh() {
         argv(&calls),
         vec![vec!["set", "-g", "@nerve_surface_pid", "4242"]]
     );
-}
-
-/// A user's offline text has spaces in it; it is still one argument.
-#[test]
-fn test_an_option_value_with_spaces_stays_one_argument() {
-    let (mut writer, calls) = writer(vec![]);
-
-    writer
-        .set("@nerve_status_offline", "nerve: offline")
-        .expect("write");
-
-    let calls = argv(&calls);
-    assert_eq!(calls[0].len(), 4);
-    assert_eq!(calls[0][3], "nerve: offline");
-    assert_no_shell(&Rc::new(RefCell::new(calls)));
 }

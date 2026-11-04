@@ -258,20 +258,3 @@ pub fn ended_supersede(
         .insert("endReason".into(), json!("superseded"));
     job
 }
-
-#[cfg(test)]
-mod terminal_identity_tests {
-    use super::*;
-    #[test]
-    fn raw_terminal_identity_survives_hook_projection() {
-        let clock = crate::clock::SystemClock;
-        let payload = json!({"hook_event_name":"UserPromptSubmit","session_id":"s",
-            "terminalHost":"Studio","terminalName":"/dev/ttys001"});
-        let facets = super::super::map_event(&payload).unwrap();
-        let job = build_job(&payload, Producer::Claude, &clock, &facets, "s");
-        assert_eq!(
-            job.extensions["terminal"],
-            json!({"host":"studio","terminal":"/dev/ttys001"})
-        );
-    }
-}

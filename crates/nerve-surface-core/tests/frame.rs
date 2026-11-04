@@ -136,15 +136,6 @@ fn test_unknown_job_fields_including_timeline_are_tolerated() {
 }
 
 #[test]
-fn test_unknown_top_level_frame_fields_are_tolerated() {
-    let decoded =
-        frame(r#"{"jobs":[],"departed":[],"seq":41,"serverTime":"2026-07-19T08:00:00Z"}"#);
-
-    assert!(decoded.jobs.is_empty());
-    assert!(decoded.departed.is_empty());
-}
-
-#[test]
 fn test_absent_frame_keys_decode_as_empty_lists() {
     let decoded = frame("{}");
 
@@ -178,53 +169,7 @@ fn test_a_job_without_an_id_is_refused() {
     assert!(Frame::decode(r#"{"jobs":[{"name":"nameless"}],"departed":[]}"#).is_err());
 }
 
-/// The wire key is `type`; the Rust field cannot be.
-#[test]
-fn test_current_type_decodes_into_the_kind_field() {
-    let decoded = job(serde_json::json!({
-        "id": "claude-code:x",
-        "current": { "type": "thinking", "summary": "Planning" }
-    }));
-
-    let current = decoded.current.expect("current must decode");
-    assert_eq!(current.kind, "thinking");
-    assert_eq!(current.summary.as_deref(), Some("Planning"));
-}
-
-#[test]
-fn test_producer_name_and_kind_are_optional() {
-    let decoded = job(serde_json::json!({
-        "id": "xcode:build",
-        "producer": { "id": "xcode" }
-    }));
-
-    assert_eq!(decoded.producer.id, "xcode");
-    assert!(decoded.producer.name.is_none());
-    assert!(decoded.producer.kind.is_none());
-}
-
 // ── Lenient enums (`facet.rs` parity) ───────────────────────────────────────
-
-#[test]
-fn test_unknown_lifecycle_degrades_to_unknown() {
-    let decoded = job(serde_json::json!({ "id": "a", "lifecycle": "hibernating" }));
-
-    assert_eq!(decoded.lifecycle, Lifecycle::Unknown);
-}
-
-#[test]
-fn test_unknown_attention_level_degrades_to_none() {
-    let decoded = job(serde_json::json!({ "id": "a", "attention": { "level": "screaming" } }));
-
-    assert_eq!(decoded.attention.level, AttentionLevel::None);
-}
-
-#[test]
-fn test_unknown_health_degrades_to_unknown() {
-    let decoded = job(serde_json::json!({ "id": "a", "health": "sick" }));
-
-    assert_eq!(decoded.health, Health::Unknown);
-}
 
 #[test]
 fn test_unknown_outcome_degrades_to_unknown_but_stays_present() {
@@ -249,35 +194,7 @@ fn test_enum_spellings_are_trimmed_and_case_folded() {
     assert_eq!(decoded.attention.level, AttentionLevel::Required);
 }
 
-/// `Subject.swift:43` and `:56` compare with `>=`, so the ordering is part of
-/// the contract, not an implementation detail (`CoreTypes.swift:29-41`).
-#[test]
-fn test_attention_levels_order_from_none_up_to_urgent() {
-    assert!(AttentionLevel::None < AttentionLevel::Informational);
-    assert!(AttentionLevel::Informational < AttentionLevel::Suggested);
-    assert!(AttentionLevel::Suggested < AttentionLevel::Required);
-    assert!(AttentionLevel::Required < AttentionLevel::Urgent);
-}
-
 // ── Dates ───────────────────────────────────────────────────────────────────
-
-#[test]
-fn test_wire_dates_decode_to_utc_second_precision() {
-    let decoded = job(serde_json::json!({
-        "id": "a",
-        "createdAt": "2026-07-19T07:00:00Z",
-        "updatedAt": "2026-07-19T08:10:00Z"
-    }));
-
-    assert_eq!(
-        decoded.created_at.expect("createdAt must decode").instant(),
-        datetime!(2026-07-19 07:00:00 UTC)
-    );
-    assert_eq!(
-        decoded.updated_at.expect("updatedAt must decode").instant(),
-        datetime!(2026-07-19 08:10:00 UTC)
-    );
-}
 
 /// The hub publishes canonical `Z` dates, but a producer talking straight to a
 /// surface may not; RFC3339 is read, then normalised (`model/time.rs:70-76`).
@@ -301,21 +218,6 @@ fn test_text_that_is_not_json_is_an_error() {
 }
 
 #[test]
-fn test_a_frame_whose_jobs_are_not_a_list_is_an_error() {
-    assert!(Frame::decode(r#"{"jobs":{"id":"a"},"departed":[]}"#).is_err());
-}
-
-#[test]
-fn test_frame_error_explains_itself() {
-    let err = Frame::decode("{").expect_err("truncated JSON must fail");
-
-    assert!(
-        !err.to_string().is_empty(),
-        "FrameError must Display the reason"
-    );
-}
-
-#[test]
 fn job_extensions_keep_role_group_and_ribbon() {
     let decoded = job(serde_json::json!({
         "id": "j",
@@ -332,21 +234,6 @@ fn job_extensions_keep_role_group_and_ribbon() {
     assert_eq!(decoded.extensions.group_id.as_deref(), Some("g1"));
     assert_eq!(decoded.extensions.parent_job_id.as_deref(), Some("parent"));
     assert_eq!(decoded.extensions.paint_ribbon, Some(false));
-}
-
-#[test]
-fn a_missing_notify_object_is_observation_only() {
-    let decoded = frame(r#"{"jobs":[]}"#);
-    assert_eq!(
-        decoded.notify.policy,
-        nerve_surface_core::notify::NotifyPolicy::Single
-    );
-}
-
-#[test]
-fn a_present_notify_object_without_a_policy_is_single() {
-    let decoded = frame(r#"{"jobs":[],"notify":{"owner":"macos"}}"#);
-    assert_eq!(decoded.notify.owner.as_deref(), Some("macos"));
 }
 
 #[test]

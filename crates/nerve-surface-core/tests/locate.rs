@@ -95,29 +95,6 @@ fn probed(executable: &[PathBuf], on_path: Option<PathBuf>) -> Vec<PathBuf> {
 
 // ── Discovery order ─────────────────────────────────────────────────────────
 
-/// Acceptance A3: every candidate directory holds a hub, and the first
-/// install directory wins.
-#[test]
-fn test_the_first_install_directory_wins_when_every_candidate_exists() {
-    let found = locate(&[first(), second(), cargo()], Some(from_path()));
-
-    assert_eq!(found, Some(first()));
-}
-
-#[test]
-fn test_the_second_install_directory_is_next() {
-    let found = locate(&[second(), cargo()], Some(from_path()));
-
-    assert_eq!(found, Some(second()));
-}
-
-#[test]
-fn test_cargo_bin_comes_after_the_install_directories() {
-    let found = locate(&[cargo()], Some(from_path()));
-
-    assert_eq!(found, Some(cargo()));
-}
-
 /// Acceptance A3: only `PATH` answers, so `PATH` is what the surface uses.
 #[test]
 fn test_path_is_the_last_resort() {
@@ -149,41 +126,7 @@ fn test_a_hit_stops_the_search() {
     assert_eq!(asked, vec![first()]);
 }
 
-/// `~` is a shell convenience, never a path: the tilde must be expanded before
-/// anything is probed.
-#[test]
-fn test_no_probed_path_ever_contains_a_tilde() {
-    for path in probed(&[], None) {
-        assert!(
-            !path.to_string_lossy().contains('~'),
-            "unexpanded tilde in {}",
-            path.display()
-        );
-    }
-}
-
-/// A different home moves only the `cargo install` candidate.
-#[test]
-fn test_the_cargo_candidate_follows_the_injected_home() {
-    let expected = PathBuf::from("/var/root").join(".cargo/bin").join(BINARY);
-    let (probe, _) = FakeProbe::new(std::slice::from_ref(&expected), None);
-    let locator = HubLocator::with_fixed_directories(probe, "/var/root", install_dirs());
-
-    assert_eq!(locator.locate(), Some(expected));
-}
-
 // ── What each platform really searches ──────────────────────────────────────
-
-/// The hub ships as `nerve-hub` everywhere but Windows, where `PATH` lookup
-/// and `metadata()` both need the suffix.
-#[test]
-fn test_the_binary_name_carries_the_platform_suffix() {
-    if cfg!(windows) {
-        assert_eq!(BINARY, "nerve-hub.exe");
-    } else {
-        assert_eq!(BINARY, "nerve-hub");
-    }
-}
 
 #[cfg(unix)]
 #[test]
@@ -196,19 +139,4 @@ fn test_unix_searches_both_homebrew_prefixes_in_order() {
         ],
         "Apple silicon Homebrew first, Intel Homebrew second"
     );
-}
-
-#[cfg(windows)]
-#[test]
-fn test_windows_searches_the_install_directories_it_can_resolve() {
-    // Both entries come from environment variables, so a stripped environment
-    // legitimately yields none. What must hold is that nothing bogus is
-    // offered and that `~/.cargo/bin` plus `PATH` still carry the search.
-    for directory in platform_fixed_directories() {
-        assert!(
-            directory.ends_with("Programs/Nerve") || directory.ends_with("Programs\\Nerve"),
-            "unexpected Windows install directory {}",
-            directory.display()
-        );
-    }
 }

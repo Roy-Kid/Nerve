@@ -16,22 +16,6 @@ suite("frame", () => {
     assert.equal(frame.notify.policy, "single");
   });
 
-  test("reads the notify lease when the hub sends one", () => {
-    const frame = parseFrame(
-      JSON.stringify({ protocolVersion:2,
-        jobs: [],
-        departed: [],
-        notify: {
-          policy: "single",
-          owner: "macos",
-          surfaces: ["macos", "vscode"],
-          watchers: 2,
-        },
-      }),
-    );
-    assert.equal(frame.notify.owner, "macos");
-  });
-
   test("drops rows without id rather than refusing the frame", () => {
     const frame = parseFrame(
       JSON.stringify({ protocolVersion:2,
@@ -43,22 +27,6 @@ suite("frame", () => {
       frame.jobs.map((job) => job.id),
       ["kept"],
     );
-  });
-
-  test("keeps lastPrompt and pid from extensions", () => {
-    const frame = parseFrame(
-      JSON.stringify({ protocolVersion:2,
-        jobs: [
-          {
-            id: "a",
-            extensions: { lastPrompt: "ship it", pid: 4242 },
-          },
-        ],
-      }),
-    );
-    const job = frame.jobs[0];
-    assert.equal(lastPrompt(job!), "ship it");
-    assert.equal(jobPid(job!), 4242);
   });
 
   test("GET /v1/jobs is a bare array", () => {

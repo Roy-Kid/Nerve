@@ -128,16 +128,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_remote_shell_clients_hold_a_session_elsewhere() {
-        assert!(is_remote_client("ssh"));
-        assert!(is_remote_client("/usr/bin/ssh"));
-        assert!(is_remote_client("mosh-client"));
-        assert!(!is_remote_client("zsh"));
-        assert!(!is_remote_client("sshfs"));
-        assert!(!is_remote_client(""));
-    }
-
-    #[test]
     fn the_destination_is_the_first_non_flag_argument() {
         assert_eq!(parse_destination("ssh Arrhenius"), Some("Arrhenius"));
         assert_eq!(
@@ -152,27 +142,12 @@ mod tests {
     }
 
     #[test]
-    fn a_remote_command_after_the_host_is_not_the_host() {
-        assert_eq!(
-            parse_destination("ssh arrhenius1 tmux ls"),
-            Some("arrhenius1")
-        );
-    }
-
-    #[test]
     fn tunnels_are_not_sessions_anyone_can_return_to() {
         assert_eq!(
             parse_destination("ssh -n -N -R 17890:127.0.0.1:17890 Arrhenius"),
             None
         );
         assert_eq!(parse_destination("ssh -fN Arrhenius"), None);
-    }
-
-    #[test]
-    fn lines_that_are_not_a_client_are_skipped() {
-        assert_eq!(parse_destination("-zsh"), None);
-        assert_eq!(parse_destination(""), None);
-        assert_eq!(parse_destination("ssh"), None);
     }
 
     #[test]

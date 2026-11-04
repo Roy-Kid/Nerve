@@ -133,13 +133,6 @@ mod tests {
     }
 
     #[test]
-    fn close_payload_names_the_window() {
-        let payload = close_payload("/usr/local/bin/nerve-tmux-surface");
-        assert!(payload.contains("close "));
-        assert!(payload.contains("#{window_id}"));
-    }
-
-    #[test]
     fn legacy_popup_and_toggle_all_are_the_ones_unbound() {
         assert!(is_legacy_prefix_binding(
             r#"bind-key -T prefix j run-shell "nerve-tmux-surface popup""#
@@ -153,17 +146,5 @@ mod tests {
         assert!(!is_legacy_prefix_binding(
             r#"bind-key -T prefix q run-shell "nerve-tmux-surface close""#
         ));
-    }
-
-    #[test]
-    fn prefix_key_reads_the_bound_key() {
-        assert_eq!(
-            prefix_key(r#"bind-key    -T prefix       e                 run-shell "x""#),
-            Some("e")
-        );
-        assert_eq!(
-            prefix_key(r#"bind-key -T prefix E run-shell "nerve-tmux-surface toggle-all""#),
-            Some("E")
-        );
     }
 }

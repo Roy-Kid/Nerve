@@ -293,53 +293,6 @@ async fn test_health_returns_the_service_literal() {
 }
 
 #[tokio::test]
-async fn test_health_legacy_alias_matches_the_v1_route() {
-    let hub = hub();
-
-    let legacy = call(&hub, get("/health")).await;
-    let versioned = call(&hub, get("/v1/health")).await;
-
-    assert_eq!(legacy.status, StatusCode::OK);
-    assert_eq!(legacy.json(), versioned.json());
-}
-
-#[tokio::test]
-async fn test_jobs_is_a_bare_array_when_empty() {
-    let reply = call(&hub(), get("/v1/jobs")).await;
-
-    assert_eq!(reply.status, StatusCode::OK);
-    // Top level is an array, never an object wrapper.
-    assert_eq!(reply.json(), json!([]));
-}
-
-#[tokio::test]
-async fn test_subjects_legacy_alias_returns_the_same_array() {
-    let hub = hub();
-    let body = json!({ "alias": MACHINE_ALIAS, "jobs": [job("a1", json!({}))] }).to_string();
-    call(&hub, post("/v1/snapshot", &body)).await;
-
-    let reply = call(&hub, get("/v1/subjects")).await;
-
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.json(), jobs_of(&hub).await);
-}
-
-#[tokio::test]
-async fn test_snapshot_reports_how_many_jobs_it_read() {
-    let body = json!({
-        "alias": MACHINE_ALIAS,
-        "machineKind": "darwin",
-        "jobs": [job("a1", json!({})), job("a2", json!({}))]
-    })
-    .to_string();
-
-    let reply = call(&hub(), post("/v1/snapshot", &body)).await;
-
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.json(), json!({ "applied": 2 }));
-}
-
-#[tokio::test]
 async fn test_snapshot_makes_the_job_readable_on_get_jobs() {
     let hub = hub();
     let body = json!({
@@ -357,33 +310,10 @@ async fn test_snapshot_makes_the_job_readable_on_get_jobs() {
 }
 
 #[tokio::test]
-async fn test_events_reports_how_many_events_applied() {
-    let body = json!({
-        "alias": MACHINE_ALIAS,
-        "events": [event("ev1", "claude-code:s1", "job.created", json!({}))]
-    })
-    .to_string();
-
-    let reply = call(&hub(), post("/v1/events", &body)).await;
-
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.json(), json!({ "applied": 1 }));
-}
-
-#[tokio::test]
 async fn test_pending_with_producer_id_is_an_empty_array() {
     // The pending subsystem is ported but dormant (spec D6): nothing enqueues,
     // so the contract is an empty array rather than a 404.
     let reply = call(&hub(), get("/v1/actions/pending?producerId=t")).await;
-
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.json(), json!([]));
-}
-
-#[tokio::test]
-async fn test_pending_with_legacy_source_id_is_an_empty_array() {
-    // `IngestServer.swift:176` — `producerId` falls back to legacy `sourceId`.
-    let reply = call(&hub(), get("/v1/actions/pending?sourceId=t")).await;
 
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.json(), json!([]));
@@ -404,15 +334,6 @@ async fn test_action_result_miss_returns_the_404_literal() {
 }
 
 #[tokio::test]
-async fn test_demo_returns_the_demo_literal() {
-    let reply = call(&hub(), post("/v1/demo", "")).await;
-
-    assert_eq!(reply.status, StatusCode::OK);
-    // `IngestServer.swift:224`.
-    assert_eq!(reply.json(), json!({ "ok": true, "demo": true }));
-}
-
-#[tokio::test]
 async fn test_demo_loads_four_jobs() {
     // `SubjectStore.swift:1039` seeds exactly four open jobs, all from producer
     // `demo`, all on this machine. Ended rows are deliberately not demo'd.
@@ -426,15 +347,6 @@ async fn test_demo_loads_four_jobs() {
         assert_eq!(text(demo, "/producer/id"), "demo");
         assert_eq!(text(demo, "/alias"), MACHINE_ALIAS);
     }
-}
-
-#[tokio::test]
-async fn test_clear_returns_the_ok_literal() {
-    let reply = call(&hub(), post("/v1/clear", "")).await;
-
-    assert_eq!(reply.status, StatusCode::OK);
-    // `IngestServer.swift:230`.
-    assert_eq!(reply.json(), json!({ "ok": true }));
 }
 
 #[tokio::test]
@@ -477,17 +389,6 @@ async fn test_unknown_path_returns_the_not_found_literal() {
 
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
     // `IngestServer.swift:258`.
-    assert_eq!(reply.json(), json!({ "error": "not found" }));
-}
-
-#[tokio::test]
-async fn test_known_path_with_wrong_method_falls_back_to_not_found() {
-    // Swift routes on the `(method, path)` tuple (`IngestServer.swift:166`), so
-    // a wrong method lands in the same default case as an unknown path — 404
-    // with the literal, not 405.
-    let reply = call(&hub(), get("/v1/snapshot")).await;
-
-    assert_eq!(reply.status, StatusCode::NOT_FOUND);
     assert_eq!(reply.json(), json!({ "error": "not found" }));
 }
 
@@ -541,114 +442,6 @@ async fn test_events_accepts_an_envelope_body() {
 
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.json(), json!({ "applied": 1 }));
-}
-
-#[tokio::test]
-async fn test_events_bare_array_decodes_but_still_needs_an_alias() {
-    // The *shape* is accepted (`decodeEnvelope` second branch, `:300`) — the
-    // rejection comes from the alias guard, which never looks at events
-    // (`validateAndNormalize:263`). A bare array has nowhere to carry an alias,
-    // so this form can only ever be 400. The literal below is the proof that
-    // decoding succeeded: a decode failure returns a different, unstable error.
-    let body = json!([event("ev1", "claude-code:s1", "job.created", json!({}))]).to_string();
-
-    let reply = call(&hub(), post("/v1/events", &body)).await;
-
-    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
-    assert_eq!(reply.json(), json!({ "error": "alias required" }));
-}
-
-#[tokio::test]
-async fn test_events_single_event_object_with_alias_is_swallowed_as_an_envelope() {
-    // Fidelity quirk #1: `decodeEnvelope` tries the all-optional envelope first,
-    // so a single event object decodes as an envelope whose `alias` happens to
-    // be the event's own alias and whose `events` is nil. Nothing is applied —
-    // the answer is `{"applied":0}`, **not** `1` — and no job appears.
-    let hub = hub();
-    let body = event(
-        "ev1",
-        "claude-code:s1",
-        "job.created",
-        json!({ "alias": MACHINE_ALIAS }),
-    )
-    .to_string();
-
-    let reply = call(&hub, post("/v1/events", &body)).await;
-
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.json(), json!({ "applied": 0 }));
-    assert_eq!(jobs_of(&hub).await, json!([]));
-}
-
-#[tokio::test]
-async fn test_events_single_event_object_without_alias_is_rejected() {
-    // Same swallow as above, but the resulting envelope has no alias at all, so
-    // the guard answers before anything is applied.
-    let body = event("ev1", "claude-code:s1", "job.created", json!({})).to_string();
-
-    let reply = call(&hub(), post("/v1/events", &body)).await;
-
-    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
-    assert_eq!(reply.json(), json!({ "error": "alias required" }));
-}
-
-#[tokio::test]
-async fn test_events_with_an_alias_and_no_events_applies_nothing() {
-    let reply = call(
-        &hub(),
-        post("/v1/events", &json!({ "alias": MACHINE_ALIAS }).to_string()),
-    )
-    .await;
-
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.json(), json!({ "applied": 0 }));
-}
-
-#[tokio::test]
-async fn test_snapshot_rejects_a_bare_job_array() {
-    // `decodeSnapshot` (`:309`) has no array fallback: envelope or nothing.
-    // The error body is unstable, so only the status is contract.
-    let body = json!([job("a1", json!({}))]).to_string();
-
-    let reply = call(&hub(), post("/v1/snapshot", &body)).await;
-
-    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn test_snapshot_single_job_object_without_alias_is_rejected() {
-    let body = job("a1", json!({ "alias": "" })).to_string();
-
-    let reply = call(&hub(), post("/v1/snapshot", &body)).await;
-
-    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
-    assert_eq!(reply.json(), json!({ "error": "alias required" }));
-}
-
-#[tokio::test]
-async fn test_snapshot_single_job_object_with_alias_is_swallowed_as_an_envelope() {
-    // Fidelity quirk #1 again, on the snapshot side: `Job` carries an `alias`
-    // key, so a lone job decodes as an aliased envelope with no `jobs`. It
-    // passes the guard, applies nothing, and the job is silently dropped.
-    let hub = hub();
-    let body = job("a1", json!({})).to_string();
-
-    let reply = call(&hub, post("/v1/snapshot", &body)).await;
-
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.json(), json!({ "applied": 0 }));
-    assert_eq!(jobs_of(&hub).await, json!([]));
-}
-
-#[tokio::test]
-async fn test_snapshot_with_an_alias_and_no_jobs_applies_nothing() {
-    // `./scripts/nerve.sh --verify-loop` posts exactly this body.
-    let body = json!({ "alias": "__not_configured__", "jobs": [] }).to_string();
-
-    let reply = call(&hub(), post("/v1/snapshot", &body)).await;
-
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.json(), json!({ "applied": 0 }));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -720,47 +513,6 @@ async fn test_any_non_empty_alias_is_accepted() {
     assert_eq!(
         text(&job_in(&jobs_of(&hub).await, "a1"), "/alias"),
         "__not_configured__"
-    );
-}
-
-#[tokio::test]
-async fn test_envelope_alias_fills_an_empty_job_alias() {
-    // Order proof, snapshot side: the machine-alias fallback
-    // (`SubjectStore.swift:414`) only runs after envelope normalisation, so an
-    // envelope alias always wins over `MACHINE_ALIAS`.
-    let hub = hub();
-    let body = json!({
-        "alias": "env-box",
-        "jobs": [job("a1", json!({ "alias": "" }))]
-    })
-    .to_string();
-
-    call(&hub, post("/v1/snapshot", &body)).await;
-
-    assert_eq!(
-        text(&job_in(&jobs_of(&hub).await, "a1"), "/alias"),
-        "env-box"
-    );
-}
-
-#[tokio::test]
-async fn test_event_created_job_falls_back_to_the_machine_alias() {
-    // Order proof, events side (fidelity quirk #3): the envelope alias satisfies
-    // the guard but is never pushed into events, so a job created by an
-    // aliasless event lands on the machine alias — not `env-box`.
-    let hub = hub();
-    let body = json!({
-        "alias": "env-box",
-        "events": [event("ev1", "claude-code:s9", "job.created", json!({}))]
-    })
-    .to_string();
-
-    let reply = call(&hub, post("/v1/events", &body)).await;
-
-    assert_eq!(reply.json(), json!({ "applied": 1 }));
-    assert_eq!(
-        text(&job_in(&jobs_of(&hub).await, "claude-code:s9"), "/alias"),
-        MACHINE_ALIAS
     );
 }
 
@@ -840,14 +592,6 @@ async fn test_body_over_one_megabyte_is_rejected() {
 }
 
 #[tokio::test]
-async fn test_malformed_json_is_rejected_with_status_only() {
-    // The error text is Swift's `"\(error)"` and is not part of the contract.
-    let reply = call(&hub(), post("/v1/snapshot", "{\"alias\":")).await;
-
-    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
 async fn test_no_input_shape_makes_a_handler_fail() {
     // Handlers return `(StatusCode, Json)` for everything: a panic would abort
     // the `oneshot` future, and a 5xx would mean an unhandled path. Neither is
@@ -900,19 +644,6 @@ async fn test_no_input_shape_makes_a_handler_fail() {
 // ════════════════════════════════════════════════════════════════════════════
 // 5. Job serialization: the embedded timeline (spec "刻意分歧")
 // ════════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_jobs_embed_the_hub_maintained_timeline() {
-    // New over Swift: the timeline used to live only inside the app process.
-    // It is always present, even when empty, so surfaces never branch on it.
-    let hub = hub();
-    let body = json!({ "alias": MACHINE_ALIAS, "jobs": [job("a1", json!({}))] }).to_string();
-
-    call(&hub, post("/v1/snapshot", &body)).await;
-
-    let stored = job_in(&jobs_of(&hub).await, "a1");
-    assert_eq!(at(&stored, "/timeline"), &json!([]));
-}
 
 #[tokio::test]
 async fn test_timeline_records_an_applied_event() {

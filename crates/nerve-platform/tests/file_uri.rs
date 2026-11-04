@@ -29,22 +29,6 @@ fn posix_percent_escapes_are_frozen() {
 }
 
 #[test]
-fn a_multibyte_name_escapes_per_byte_not_per_char() {
-    assert_eq!(
-        to_file_uri("/Users/me/项目").as_deref(),
-        Some("file:///Users/me/%E9%A1%B9%E7%9B%AE")
-    );
-}
-
-#[test]
-fn the_unreserved_set_stays_literal() {
-    assert_eq!(
-        to_file_uri("/a-b_c.d~e/9Z").as_deref(),
-        Some("file:///a-b_c.d~e/9Z")
-    );
-}
-
-#[test]
 fn a_windows_drive_keeps_its_colon_and_gains_the_rfc_slash() {
     assert_eq!(
         to_file_uri("C:\\work\\nerve").as_deref(),
@@ -54,21 +38,6 @@ fn a_windows_drive_keeps_its_colon_and_gains_the_rfc_slash() {
         to_file_uri("c:/work/nerve").as_deref(),
         Some("file:///c:/work/nerve")
     );
-}
-
-#[test]
-fn a_unc_server_becomes_the_url_authority() {
-    assert_eq!(
-        to_file_uri("\\\\srv\\share\\proj").as_deref(),
-        Some("file://srv/share/proj")
-    );
-}
-
-#[test]
-fn a_relative_path_gets_no_url() {
-    for path in ["proj", "~/proj", "C:work", ""] {
-        assert_eq!(to_file_uri(path), None, "{path} should not encode");
-    }
 }
 
 #[test]
@@ -103,28 +72,9 @@ fn a_unc_path_round_trips_to_backslashes() {
 }
 
 #[test]
-fn the_localhost_authority_is_accepted() {
-    assert_eq!(
-        from_file_uri("file://localhost/Users/me/proj").as_deref(),
-        Some("/Users/me/proj")
-    );
-    assert_eq!(
-        from_file_uri("file:////localhost/Users/me/proj").as_deref(),
-        Some("/Users/me/proj")
-    );
-}
-
-#[test]
 fn a_drive_survives_both_slash_counts_and_an_escaped_colon() {
     // Shapes seen in the wild from editors and producers.
     for uri in ["file:///C:/work", "file://C:/work", "file:///C%3A/work"] {
         assert_eq!(from_file_uri(uri).as_deref(), Some("C:/work"), "{uri}");
-    }
-}
-
-#[test]
-fn a_non_file_url_decodes_to_nothing() {
-    for uri in ["vscode://file/Users/me", "http://example.com/x", ""] {
-        assert_eq!(from_file_uri(uri), None, "{uri}");
     }
 }

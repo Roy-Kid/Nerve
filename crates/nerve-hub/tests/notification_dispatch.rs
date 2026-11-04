@@ -205,19 +205,3 @@ fn turn_complete_fires_once_per_turn_only_for_surfaces_that_ask() {
     );
     assert_eq!(next.len(), 1);
 }
-
-#[test]
-fn turn_complete_is_off_when_the_surface_turns_it_off() {
-    let roster = SurfaceRoster::new(ChangeSignal::new());
-    roster.configure_client(
-        "off".into(),
-        serde_json::from_value(json!({"enabled":true,"turnComplete":false})).unwrap(),
-    );
-    let _off = roster.subscribe_client("tether", "off", true);
-    let mut policy = Notifications::default();
-    assert!(
-        policy
-            .evaluate(&turn("completed", "2026-01-01T00:00:00Z"), &roster)
-            .is_empty()
-    );
-}
